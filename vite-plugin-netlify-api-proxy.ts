@@ -6,6 +6,10 @@ function stripTrailingSlashes(s: string): string {
   return s.replace(/\/+$/, '');
 }
 
+function normalizeApiBase(raw: string): string {
+  return stripTrailingSlashes(raw.trim()).replace(/\/api$/i, '');
+}
+
 /**
  * Après le build, réécrit `dist/_redirects` :
  * - si `VITE_API_URL` est défini au build : proxy Netlify `/api/*` puis lignes de `public/_redirects` ;
@@ -34,9 +38,14 @@ export function netlifyApiProxyRedirects(apiBaseUrl: string | undefined): Plugin
       const trimmed = apiBaseUrl?.trim();
       let body: string;
       if (trimmed) {
-        const base = stripTrailingSlashes(trimmed);
+        const base = normalizeApiBase(trimmed);
         body = `/api/*  ${base}/api/:splat  200\n${spaBlock}`;
       } else {
+        if (config.command === 'build' && config.mode === 'production') {
+          config.logger.warn(
+            '\n[netlify-api-proxy] VITE_API_URL est absent au build : en production, /api/* risque de renvoyer index.html (liste produits vide). Définissez VITE_API_URL (Netlify → Environment variables) puis redéployez.\n'
+          );
+        }
         body = spaBlock;
       }
 
