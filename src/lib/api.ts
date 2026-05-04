@@ -1,4 +1,10 @@
-const apiBase = () => (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+/** En prod (Netlify), les appels vont en same-origin `/api/*` ; le proxy `_redirects` pointe vers l’API. */
+const apiBase = () => {
+  if (import.meta.env.PROD) {
+    return '';
+  }
+  return (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+};
 
 export class ApiError extends Error {
   constructor(
