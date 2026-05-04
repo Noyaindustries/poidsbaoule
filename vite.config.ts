@@ -17,15 +17,11 @@ export default defineConfig(({ mode }) => {
       Boolean(process.env.CONTEXT) ||
       Boolean(process.env.DEPLOY_PRIME_URL);
 
-    if (mode === 'production' && missingApiUrl) {
+    if (mode === 'production' && missingApiUrl && !isNetlifyBuild) {
       const msg =
-        'VITE_API_URL est absent (URL de l’API sans slash final). Sans cela, le proxy Netlify `/api/*` ne peut pas être généré ' +
-        'et la liste des produits reste vide en production.';
-      if (isNetlifyBuild) {
-        throw new Error(msg);
-      } else {
-        console.warn(`\n[build] ${msg}\n`);
-      }
+        'VITE_API_URL est absent (URL de l’API sans slash final). Sans cela, dist/_redirects ne proxifie pas vers une API externe ; ' +
+        'utilisez des URLs relatives `/api/...` et un reverse-proxy (ou netlify.toml + fonctions).';
+      console.warn(`\n[build] ${msg}\n`);
     }
     return {
       server: {

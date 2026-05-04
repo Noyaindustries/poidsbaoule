@@ -36,14 +36,21 @@ export function netlifyApiProxyRedirects(apiBaseUrl: string | undefined): Plugin
 
       const outRedirects = path.resolve(config.root, config.build.outDir, '_redirects');
       const trimmed = apiBaseUrl?.trim();
+      /** Sur Netlify, `netlify.toml` réécrit déjà `/api/*` vers `/.netlify/functions/api`. Une ligne `/api/*` dans `dist/_redirects` est fusionnée au déploiement et peut prendre le pas sur la fonction (proxy CDN vers un hôte externe) → 502 si l’API externe est KO. */
+      const isNetlifyBuild = process.env.NETLIFY === 'true' || Boolean(process.env.DEPLOY_PRIME_URL);
       let body: string;
-      if (trimmed) {
+      if (trimmed && !isNetlifyBuild) {
         const base = normalizeApiBase(trimmed);
         body = `/api/*  ${base}/api/:splat  200\n${spaBlock}`;
       } else {
-        if (config.command === 'build' && config.mode === 'production') {
+        if (config.command === 'build' && config.mode === 'production' && !trimmed && !isNetlifyBuild) {
           config.logger.warn(
             '\n[netlify-api-proxy] VITE_API_URL est absent au build : en production, /api/* doit etre gere soit par netlify.toml (/.netlify/functions/api), soit via dist/_redirects vers une API externe.\n'
+          );
+        }
+        if (trimmed && isNetlifyBuild) {
+          config.logger.info(
+            '\n[netlify-api-proxy] Build Netlify : pas de proxy /api dans dist/_redirects (routage via netlify.toml → fonction).\n'
           );
         }
         body = spaBlock;
