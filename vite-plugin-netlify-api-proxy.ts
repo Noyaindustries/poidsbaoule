@@ -36,12 +36,21 @@ export function netlifyApiProxyRedirects(apiBaseUrl: string | undefined): Plugin
 
       const outRedirects = path.resolve(config.root, config.build.outDir, '_redirects');
       const trimmed = apiBaseUrl?.trim();
-      /** Sur Netlify, `netlify.toml` réécrit déjà `/api/*` vers `/.netlify/functions/api`. Une ligne `/api/*` dans `dist/_redirects` est fusionnée au déploiement et peut prendre le pas sur la fonction (proxy CDN vers un hôte externe) → 502 si l’API externe est KO. */
+      /**
+       * Netlify évalue `dist/_redirects` **avant** les `[[redirects]]` de `netlify.toml`.
+       * `public/_redirects` doit donc lister `/api/*` **avant** `/* /index.html`, sinon la SPA mange les routes API.
+       */
       const isNetlifyBuild = process.env.NETLIFY === 'true' || Boolean(process.env.DEPLOY_PRIME_URL);
       let body: string;
       if (trimmed && !isNetlifyBuild) {
         const base = normalizeApiBase(trimmed);
-        body = `/api/*  ${base}/api/:splat  200\n${spaBlock}`;
+        const tailLines = spaBlock.split('\n').filter((line) => {
+          const t = line.trim();
+          if (!t || t.startsWith('#')) return false;
+          return !/^\/api\/\*/.test(t);
+        });
+        const tail = tailLines.length ? `${tailLines.join('\n')}\n` : '/*      /index.html  200\n';
+        body = `/api/*  ${base}/api/:splat  200\n${tail}`;
       } else {
         if (config.command === 'build' && config.mode === 'production' && !trimmed && !isNetlifyBuild) {
           config.logger.warn(
@@ -50,7 +59,7 @@ export function netlifyApiProxyRedirects(apiBaseUrl: string | undefined): Plugin
         }
         if (trimmed && isNetlifyBuild) {
           config.logger.info(
-            '\n[netlify-api-proxy] Build Netlify : pas de proxy /api dans dist/_redirects (routage via netlify.toml → fonction).\n'
+            '\n[netlify-api-proxy] Build Netlify : VITE_API_URL ignoré pour _redirects ; routage /api via public/_redirects → fonction.\n'
           );
         }
         body = spaBlock;

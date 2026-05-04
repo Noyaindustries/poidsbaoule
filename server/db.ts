@@ -9,11 +9,13 @@ export async function getDb(): Promise<Db> {
   if (db) return db;
   const isProd = process.env.NODE_ENV === 'production';
   const fromEnv =
-    process.env.MONGODB_URI?.trim() || process.env.DATABASE_URL?.trim();
+    process.env.MONGODB_URI?.trim() ||
+    process.env.DATABASE_URL?.trim() ||
+    process.env.MONGODB_URL?.trim();
   const uri = fromEnv || (!isProd ? DEFAULT_DEV_URI : '');
   if (!uri) {
     throw new Error(
-      'MONGODB_URI ou DATABASE_URL est requis en production. Voir .env.example.'
+      'MONGODB_URI, DATABASE_URL ou MONGODB_URL est requis en production. Voir .env.example.'
     );
   }
   if (!fromEnv && !isProd) {
