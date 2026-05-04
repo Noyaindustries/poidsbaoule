@@ -16,6 +16,15 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
+      /** Même proxy qu’en dev : sans cela, `vite preview` répond 404 sur `/api/*`. */
+      preview: {
+        proxy: {
+          '/api': {
+            target: 'http://127.0.0.1:5050',
+            changeOrigin: true,
+          },
+        },
+      },
       plugins: [react(), tailwindcss()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
