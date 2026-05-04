@@ -46,7 +46,7 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
       if (res.ok && /^\s*</.test(text)) {
         throw new ApiError(
           502,
-          'Réponse HTML au lieu de JSON (souvent /api non proxifié). Définissez VITE_API_URL au build Netlify et redéployez, ou vérifiez dist/_redirects.'
+          'Reponse HTML au lieu de JSON (souvent /api non proxifie). Verifiez le rewrite Netlify vers /.netlify/functions/api, ou configurez VITE_API_URL/dist/_redirects.'
         );
       }
       data = null;

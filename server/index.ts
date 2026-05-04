@@ -3,11 +3,13 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { getDb } from './db';
 import { PRODUCTS } from '../src/constants';
 import type { CustomerTestimonial, ProductComment } from '../src/types';
 
-const app = express();
+export const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -751,25 +753,60 @@ app.post('/api/auth/change-password', async (req: Request, res: Response) => {
 });
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, service: 'poidsbaoule-api' });
+  res.json({ ok: true, service: 'poidsbaoule-monolith' });
 });
 
-const port = Number(process.env.API_PORT) || 5050;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distDir = path.resolve(__dirname, '../dist');
+const distIndex = path.join(distDir, 'index.html');
+
+// Sert l'application front buildée en production monolithique.
+app.use(express.static(distDir));
+app.get('*', (req: Request, res: Response, next) => {
+  if (req.path.startsWith('/api/')) {
+    next();
+    return;
+  }
+  res.sendFile(distIndex, (err) => {
+    if (err) next(err);
+  });
+});
+
+const port = Number(process.env.PORT ?? process.env.API_PORT) || 5050;
+
+let initPromise: Promise<void> | null = null;
+
+export async function initializeApp() {
+  if (!initPromise) {
+    initPromise = (async () => {
+      await getDb();
+      await ensureIndexes();
+      await seedProductsIfEmpty();
+      await seedTestimonialsIfEmpty();
+    })().catch((err) => {
+      initPromise = null;
+      throw err;
+    });
+  }
+  await initPromise;
+}
 
 async function main() {
-  await getDb();
-  await ensureIndexes();
-  await seedProductsIfEmpty();
-  await seedTestimonialsIfEmpty();
+  await initializeApp();
   app.listen(port, () => {
-    console.log(`API MongoDB sur http://localhost:${port}`);
+    console.log(`App monolithique (API + front) sur http://localhost:${port}`);
   });
 }
 
-main().catch((err) => {
-  console.error(err);
-  console.error(
-    "\n→ Vérifiez que MongoDB est démarré (mongod / Docker / Atlas) et que l'URI est correcte. Fichier .env : MONGODB_URI\n"
-  );
-  process.exit(1);
-});
+const isEntrypoint = process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isEntrypoint) {
+  main().catch((err) => {
+    console.error(err);
+    console.error(
+      "\n→ Vérifiez que MongoDB est démarré (mongod / Docker / Atlas) et que l'URI est correcte. Fichier .env : MONGODB_URI\n"
+    );
+    process.exit(1);
+  });
+}

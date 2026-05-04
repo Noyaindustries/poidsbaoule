@@ -43,7 +43,7 @@ export function netlifyApiProxyRedirects(apiBaseUrl: string | undefined): Plugin
       } else {
         if (config.command === 'build' && config.mode === 'production') {
           config.logger.warn(
-            '\n[netlify-api-proxy] VITE_API_URL est absent au build : en production, /api/* risque de renvoyer index.html (liste produits vide). Définissez VITE_API_URL (Netlify → Environment variables) puis redéployez.\n'
+            '\n[netlify-api-proxy] VITE_API_URL est absent au build : en production, /api/* doit etre gere soit par netlify.toml (/.netlify/functions/api), soit via dist/_redirects vers une API externe.\n'
           );
         }
         body = spaBlock;
