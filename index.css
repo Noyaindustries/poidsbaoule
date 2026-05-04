@@ -66,15 +66,27 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     @apply font-sans bg-background text-foreground;
+    overflow-x: clip;
+  }
+  #root {
+    min-height: 100dvh;
+    min-width: 0;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-serif;
   }
-  html {
-    @apply font-sans;
-  }
+}
+
+/* Toasts : ne pas dépasser la largeur utile sur mobile */
+.toaster [data-sonner-toast] {
+  max-width: min(22rem, calc(100vw - 1.25rem));
 }
 
 @theme inline {
@@ -174,4 +186,17 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* Préférence admin : texte plus grand (Paramètres → Affichage) */
+html.pb-admin-large-text {
+  font-size: 106.25%;
+}
+
+/* Densité compacte : tableaux du back-office (Paramètres → Affichage) */
+.admin-density-compact table th,
+.admin-density-compact table td {
+  padding: 0.5rem 0.75rem !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.35 !important;
 }
