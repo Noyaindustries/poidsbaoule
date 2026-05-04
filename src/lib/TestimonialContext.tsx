@@ -21,7 +21,7 @@ export function TestimonialProvider({ children }: { children: React.ReactNode })
     try {
       setLoading(true);
       const data = await apiJson<CustomerTestimonial[]>('/api/testimonials');
-      setTestimonials(data);
+      setTestimonials(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to fetch testimonials:', e);
       setTestimonials([]);

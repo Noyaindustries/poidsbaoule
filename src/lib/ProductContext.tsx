@@ -26,7 +26,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
   const fetchProducts = async () => {
     try {
       const data = await apiJson<Product[]>('/api/products');
-      setProducts(data);
+      setProducts(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to fetch products:', e);
     }

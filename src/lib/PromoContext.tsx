@@ -19,7 +19,7 @@ export function PromoProvider({ children }: { children: React.ReactNode }) {
   const fetchPromos = async () => {
     try {
       const data = await apiJson<PromoCode[]>('/api/promo-codes');
-      setPromoCodes(data);
+      setPromoCodes(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to fetch promos:', e);
     }

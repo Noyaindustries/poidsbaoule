@@ -33,7 +33,8 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
     const savedCart = localStorage.getItem('cart');
     if (savedCart) {
       try {
-        setItems(JSON.parse(savedCart));
+        const parsed = JSON.parse(savedCart) as unknown;
+        setItems(Array.isArray(parsed) ? parsed : []);
       } catch (error) {
         console.error('Error loading cart from localStorage:', error);
       }

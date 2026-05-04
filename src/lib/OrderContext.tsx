@@ -27,7 +27,7 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const fetchOrders = async () => {
     try {
       const data = await apiJson<Order[]>('/api/orders');
-      setOrders(data);
+      setOrders(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Failed to fetch orders:', e);
     }

@@ -24,8 +24,8 @@ export function ReservationProvider({ children }: { children: React.ReactNode })
         apiJson<Reservation[]>('/api/reservations'),
         apiJson<CustomOrder[]>('/api/custom-orders'),
       ]);
-      setReservations(resData);
-      setCustomOrders(customData);
+      setReservations(Array.isArray(resData) ? resData : []);
+      setCustomOrders(Array.isArray(customData) ? customData : []);
     } catch (e) {
       console.error('Failed to fetch reservations:', e);
     }

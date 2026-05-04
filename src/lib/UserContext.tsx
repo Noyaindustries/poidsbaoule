@@ -31,7 +31,9 @@ type StoredUser = User & { _passwordHash?: string };
 const getLocalUsers = (): User[] => {
   try {
     const raw = localStorage.getItem(LOCAL_USERS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -104,7 +106,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const fetchUsers = async () => {
     try {
       const data = await apiJson<User[]>('/api/users');
-      setUsers(data);
+      setUsers(Array.isArray(data) ? data : []);
       setUseLocalFallback(false);
       return;
     } catch (e: unknown) {
