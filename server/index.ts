@@ -756,10 +756,43 @@ app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ ok: true, service: 'poidsbaoule-monolith' });
 });
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const distDir = path.resolve(__dirname, '../dist');
+/**
+ * Sous Netlify Functions (bundle CJS), `import.meta.url` peut être absent →
+ * fileURLToPath(undefined) lève ERR_INVALID_ARG_TYPE et casse tout le handler.
+ */
+function resolveDistDir(): string {
+  try {
+    const u = (import.meta as { url?: string }).url;
+    if (u && typeof u === 'string') {
+      return path.resolve(path.dirname(fileURLToPath(u)), '..', 'dist');
+    }
+  } catch {
+    /* import.meta.url ou fileURLToPath invalides en contexte bundle */
+  }
+  return path.join(process.cwd(), 'dist');
+}
+
+const distDir = resolveDistDir();
 const distIndex = path.join(distDir, 'index.html');
+
+// #region agent log
+fetch('http://127.0.0.1:27772/ingest/69353350-be9e-4e7e-945f-5b8e0cd4960a', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '64bc3d' },
+  body: JSON.stringify({
+    sessionId: '64bc3d',
+    hypothesisId: 'H-fileURLToPath',
+    location: 'server/index.ts:resolveDistDir',
+    message: 'dist paths resolved',
+    data: {
+      distDir,
+      cwd: process.cwd(),
+      hasImportMetaUrl: Boolean((import.meta as { url?: string }).url),
+    },
+    timestamp: Date.now(),
+  }),
+}).catch(() => {});
+// #endregion
 
 // Sert l'application front buildée en production monolithique.
 app.use(express.static(distDir));
@@ -799,7 +832,18 @@ async function main() {
   });
 }
 
-const isEntrypoint = process.argv[1] === fileURLToPath(import.meta.url);
+function resolveEntryScriptPath(): string | null {
+  try {
+    const u = (import.meta as { url?: string }).url;
+    if (u && typeof u === 'string') return fileURLToPath(u);
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+const entryScriptPath = resolveEntryScriptPath();
+const isEntrypoint = Boolean(entryScriptPath) && process.argv[1] === entryScriptPath;
 
 if (isEntrypoint) {
   main().catch((err) => {
