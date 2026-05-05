@@ -220,7 +220,7 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
   };
 
   return (
-    <DialogContent className="w-[96vw] max-w-[1400px] max-h-[90vh] overflow-x-hidden overflow-y-auto rounded-[32px] border-none p-0 font-sans shadow-2xl">
+    <DialogContent className="w-[94vw] max-w-[1320px] sm:max-w-[1320px] max-h-[90vh] overflow-x-hidden overflow-y-auto rounded-[32px] border-none p-0 font-sans shadow-2xl">
       <DialogHeader className="p-8 pb-4">
         <div className="flex items-center justify-between gap-4 mb-2">
           <Badge className="bg-primary/10 text-primary border-none text-[10px] uppercase tracking-widest font-bold">Commande active</Badge>
@@ -506,11 +506,11 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
           />
         </section>
 
-        <div className="sticky bottom-0 mt-6 flex flex-col gap-3 border-t bg-white/90 p-6 backdrop-blur-md sm:flex-row sm:gap-4">
-          <Button variant="outline" className="h-14 w-full rounded-full sm:flex-1" onClick={() => generateInvoicePDF(order.id)}>
+        <div className="sticky bottom-0 mt-6 grid grid-cols-1 gap-3 border-t bg-white/90 p-6 backdrop-blur-md sm:grid-cols-2 sm:gap-4">
+          <Button variant="outline" className="h-14 w-full rounded-full text-base font-semibold" onClick={() => generateInvoicePDF(order.id)}>
             <FileText className="mr-2 h-4 w-4" /> Facture PDF
           </Button>
-          <Button className="h-14 w-full rounded-full text-lg font-bold sm:flex-2" onClick={() => handleWhatsApp('shipping')}>
+          <Button className="h-14 w-full rounded-full text-base font-semibold" onClick={() => handleWhatsApp('shipping')}>
             <Truck className="mr-2 h-5 w-5" /> Prévenir Livraison
           </Button>
         </div>
