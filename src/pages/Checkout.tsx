@@ -175,6 +175,10 @@ export default function Checkout() {
       // Create and save new order
       const nextOrderId = `PBH-2026-${Math.floor(Math.random() * 900) + 100}`;
       const refTrim = paymentReference.trim();
+      const orderPaymentMethod =
+        paymentStrategy === 'CASH'
+          ? 'Paiement à la livraison'
+          : mapCheckoutPaymentToOrderMethod(paymentMethod);
       await addOrder({
         id: nextOrderId,
         userId: currentUser?.id || "guest-" + Math.random().toString(36).substr(2, 9),
@@ -187,7 +191,7 @@ export default function Checkout() {
         amountPaid: paymentStrategy === 'FULL' ? amountDueNow : 0,
         balanceDue: paymentStrategy === 'FULL' ? Math.max(finalTotal - amountDueNow, 0) : finalTotal,
         status: paymentStrategy === 'FULL' ? 'Paiement reçu' : 'En attente de paiement',
-        paymentMethod: mapCheckoutPaymentToOrderMethod(paymentMethod),
+        paymentMethod: orderPaymentMethod,
         ...(paymentConfirmationId ? { paymentConfirmationId } : {}),
         ...(paymentTransactionId ? { paymentTransactionId } : {}),
         ...(paymentConfirmedAt ? { paymentConfirmedAt } : {}),
