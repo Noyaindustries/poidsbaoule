@@ -27,9 +27,18 @@ interface CartProviderProps {
 
 export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
   const [items, setItems] = useState<CartItem[]>([]);
+  const CART_SESSION_KEY = 'pb-cart-session-active';
 
   // Load cart from localStorage on mount
   useEffect(() => {
+    // Nouvelle session navigateur => on repart avec un panier vide.
+    const hasSession = sessionStorage.getItem(CART_SESSION_KEY);
+    if (!hasSession) {
+      localStorage.removeItem('cart');
+      sessionStorage.setItem(CART_SESSION_KEY, '1');
+      setItems([]);
+      return;
+    }
     const savedCart = localStorage.getItem('cart');
     if (savedCart) {
       try {
