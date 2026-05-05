@@ -31,12 +31,25 @@ export default function OrderManager() {
   const { orders } = useOrders();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'deposit_pending' | 'deposit_validated' | 'balance_due'>('all');
 
-  const filteredOrders = orders.filter(order => 
-    order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    order.customerEmail.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const hasHalfDeposit = (order: Order) =>
+    order.paymentStrategy === '50-50' && order.amountPaid > 0 && order.balanceDue > 0;
+  const isHalfDepositPendingValidation = (order: Order) =>
+    order.paymentStrategy === '50-50' && order.amountPaid === 0 && order.balanceDue > 0;
+
+  const filteredOrders = orders.filter(order => {
+    const matchesSearch =
+      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.customerEmail.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+
+    if (paymentFilter === 'deposit_pending') return isHalfDepositPendingValidation(order);
+    if (paymentFilter === 'deposit_validated') return hasHalfDeposit(order);
+    if (paymentFilter === 'balance_due') return order.balanceDue > 0;
+    return true;
+  });
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -49,11 +62,6 @@ export default function OrderManager() {
       default: return <Badge variant="secondary" className="rounded-full px-3 py-1 text-[10px]">{status}</Badge>;
     }
   };
-
-  const hasHalfDeposit = (order: Order) =>
-    order.paymentStrategy === '50-50' && order.amountPaid > 0 && order.balanceDue > 0;
-  const isHalfDepositPendingValidation = (order: Order) =>
-    order.paymentStrategy === '50-50' && order.amountPaid === 0 && order.balanceDue > 0;
 
   return (
     <div className="space-y-8">
@@ -68,9 +76,20 @@ export default function OrderManager() {
           />
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="rounded-full shadow-sm">
-            <Filter className="mr-2 h-4 w-4" /> Filtres
-          </Button>
+          <div className="flex items-center gap-2 rounded-full border bg-card px-2 py-1 shadow-sm">
+            <Button variant={paymentFilter === 'all' ? 'default' : 'ghost'} size="sm" className="rounded-full text-xs" onClick={() => setPaymentFilter('all')}>
+              Toutes
+            </Button>
+            <Button variant={paymentFilter === 'deposit_pending' ? 'default' : 'ghost'} size="sm" className="rounded-full text-xs" onClick={() => setPaymentFilter('deposit_pending')}>
+              En attente acompte
+            </Button>
+            <Button variant={paymentFilter === 'deposit_validated' ? 'default' : 'ghost'} size="sm" className="rounded-full text-xs" onClick={() => setPaymentFilter('deposit_validated')}>
+              Acompte validé
+            </Button>
+            <Button variant={paymentFilter === 'balance_due' ? 'default' : 'ghost'} size="sm" className="rounded-full text-xs" onClick={() => setPaymentFilter('balance_due')}>
+              Solde à encaisser
+            </Button>
+          </div>
           <Button variant="outline" className="rounded-full shadow-sm" onClick={() => generateInvoicePDF("EXPORT_ALL")}>
             <Download className="mr-2 h-4 w-4" /> Exporter (CSV)
           </Button>
