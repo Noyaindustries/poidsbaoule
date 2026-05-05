@@ -46,7 +46,7 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setOrders((prev) => [order, ...prev]);
     } catch (e) {
       console.error('Failed to add order to DB:', e);
-      setOrders((prev) => [order, ...prev]);
+      throw e;
     }
   };
 
@@ -59,7 +59,7 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
     } catch (e) {
       console.error('Failed to update status in DB:', e);
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
+      throw e;
     }
   };
 

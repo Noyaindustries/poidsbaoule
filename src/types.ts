@@ -47,6 +47,27 @@ export interface Reservation {
   preferredDates: Date[];
   budget: string;
   photos: string[];
+  serviceDetails?: {
+    projectType: 'Résidentiel' | 'Commercial' | 'Hôtellerie' | 'Bureau' | 'Autre';
+    interventionType: 'À domicile' | 'À distance' | 'Hybride';
+    preferredDate: string;
+    preferredTimeSlot: 'Matin (09h-12h)' | 'Après-midi (14h-18h)' | 'Soirée (18h-20h)';
+    estimatedDurationHours: number;
+    roomsInScope: string[];
+    options: {
+      shoppingList: boolean;
+      3dPlan: boolean;
+      installationStyling: boolean;
+      followUpVisit: boolean;
+    };
+    location: {
+      city: string;
+      neighborhood: string;
+      addressNote?: string;
+    };
+    estimatedCost: number;
+    notes?: string;
+  };
   status: 'Demande reçue' | 'Confirmée' | 'En cours' | 'Terminée' | 'Annulée';
   createdAt: string;
 }
@@ -62,6 +83,31 @@ export interface CustomOrder {
   type: string;
   moodboard: string[];
   preferredDeadline: string;
+  customization?: {
+    pieceCategory: 'Masque' | 'Miroir' | 'Meuble Niche' | 'Vase / Objet Déco' | 'Luminaire' | 'Autre';
+    quantity: number;
+    dimensionsCm: {
+      width: number;
+      height: number;
+      depth?: number;
+    };
+    palette: string[];
+    finishOptions: string[];
+    usageContext: 'Intérieur' | 'Extérieur' | 'Mixte';
+    budgetRange:
+      | 'Moins de 100 000 FCFA'
+      | '100 000 - 300 000 FCFA'
+      | '300 000 - 600 000 FCFA'
+      | 'Plus de 600 000 FCFA';
+    constraints: string[];
+    optionalServices: {
+      homeDelivery: boolean;
+      onSiteInstallation: boolean;
+      expeditedProduction: boolean;
+    };
+    estimatedPrice: number;
+    notes?: string;
+  };
   status: 'Étude' | 'Fabrication' | 'Finition' | 'Prêt à livrer';
   createdAt: string;
 }
@@ -104,12 +150,18 @@ export interface Order {
   items: CartItem[];
   total: number;
   status: 'En attente de paiement' | 'Paiement reçu' | 'En préparation' | 'Expédiée' | 'Livrée' | 'Annulée';
-  paymentMethod: 'Wave' | 'Orange Money' | 'MTN Mobile Money' | 'Moov Money' | 'Virement' | 'Cash';
+  paymentMethod: 'Wave' | 'Orange Money';
   paymentStrategy: 'FULL' | '50-50' | 'CASH';
   amountPaid: number;
   balanceDue: number;
   /** Référence / ID de transaction mobile money (optionnel, saisi par le client). */
   paymentReference?: string;
+  /** Identifiant de confirmation serveur (preuve d'encaissement). */
+  paymentConfirmationId?: string;
+  /** Identifiant de transaction confirmé par le backend. */
+  paymentTransactionId?: string;
+  /** Horodatage de confirmation serveur du prélèvement. */
+  paymentConfirmedAt?: string;
   shippingAddress: Address;
   createdAt: string;
 }

@@ -9,9 +9,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { useReservations } from '@/lib/ReservationContext';
+import { apiFormData } from '@/lib/api';
+
+const MOODBOARD_MAX_FILES = 5;
+const MOODBOARD_MAX_BYTES = 5 * 1024 * 1024;
+const MOODBOARD_ACCEPT = ['image/jpeg', 'image/png', 'image/webp'];
+
+type UploadedMoodboardFile = {
+  url: string;
+  originalName: string;
+  size: number;
+  mimeType: string;
+};
 
 export default function CustomOrder() {
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [uploadError, setUploadError] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadedMoodboard, setUploadedMoodboard] = useState<UploadedMoodboardFile[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   const { addCustomOrder } = useReservations();
   const [formData, setFormData] = useState({
@@ -21,28 +38,161 @@ export default function CustomOrder() {
     deadline: '',
     description: '',
     dimensions: '',
-    finish: ''
+    finish: '',
+    quantity: '1',
+    widthCm: '',
+    heightCm: '',
+    depthCm: '',
+    usageContext: '',
+    budgetRange: '',
+    constraints: '',
+    notes: '',
+    includeDelivery: true,
+    includeInstallation: false,
+    expeditedProduction: false,
+    desiredColors: '',
+    estimatedBudget: '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    await addCustomOrder({
-      customerName: formData.name,
-      email: formData.email,
-      description: formData.description,
-      dimensions: formData.dimensions,
-      finish: formData.finish,
-      color: formData.finish, // Using same field for simplicity or could split
-      type: formData.type,
-      moodboard: [],
-      preferredDeadline: formData.deadline
-    });
+    setFormError('');
 
-    setIsSubmitted(true);
-    toast.success("Demande envoyée !", {
-      description: "Nous vous recontacterons sous 48h avec un devis personnalisé.",
-    });
+    const width = Number(formData.widthCm);
+    const height = Number(formData.heightCm);
+    const depth = Number(formData.depthCm);
+    const quantity = Number(formData.quantity);
+    const estimatedBudget = Number(formData.estimatedBudget);
+
+    if (!formData.type || !formData.deadline || !formData.usageContext || !formData.budgetRange) {
+      setFormError('Merci de compléter le type de pièce, le délai, le contexte d’usage et la fourchette de budget.');
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity < 1) {
+      setFormError('La quantité doit être supérieure ou égale à 1.');
+      return;
+    }
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      setFormError('Les dimensions largeur/hauteur doivent être des nombres positifs.');
+      return;
+    }
+    if (formData.depthCm && (!Number.isFinite(depth) || depth <= 0)) {
+      setFormError('La profondeur doit être un nombre positif.');
+      return;
+    }
+    if (!Number.isFinite(estimatedBudget) || estimatedBudget <= 0) {
+      setFormError('Merci d’indiquer un budget estimatif valide.');
+      return;
+    }
+    if (selectedFiles.length > MOODBOARD_MAX_FILES) {
+      setUploadError(`Vous pouvez joindre au maximum ${MOODBOARD_MAX_FILES} images.`);
+      return;
+    }
+
+    let uploadingStep = false;
+    try {
+      let moodboardUrls = uploadedMoodboard.map((file) => file.url);
+      if (selectedFiles.length > 0) {
+        uploadingStep = true;
+        setIsUploading(true);
+        const form = new FormData();
+        selectedFiles.forEach((file) => form.append('files', file));
+        const uploadResponse = await apiFormData<{ files: UploadedMoodboardFile[] }>(
+          '/api/custom-orders/upload',
+          form
+        );
+        moodboardUrls = uploadResponse.files.map((file) => file.url);
+        setUploadedMoodboard(uploadResponse.files);
+        uploadingStep = false;
+      }
+
+      await addCustomOrder({
+        customerName: formData.name.trim(),
+        email: formData.email.trim(),
+        description: formData.description.trim(),
+        dimensions: `${width} x ${height}${formData.depthCm ? ` x ${depth}` : ''} cm`,
+        finish: formData.finish.trim(),
+        color: formData.desiredColors.trim() || formData.finish.trim(),
+        type: formData.type,
+        moodboard: moodboardUrls,
+        preferredDeadline: formData.deadline,
+        customization: {
+          pieceCategory: formData.type as 'Masque' | 'Miroir' | 'Meuble Niche' | 'Vase / Objet Déco' | 'Luminaire' | 'Autre',
+          quantity,
+          dimensionsCm: {
+            width,
+            height,
+            ...(formData.depthCm ? { depth } : {}),
+          },
+          palette: formData.desiredColors
+            .split(',')
+            .map((v) => v.trim())
+            .filter(Boolean),
+          finishOptions: formData.finish
+            .split(',')
+            .map((v) => v.trim())
+            .filter(Boolean),
+          usageContext: formData.usageContext as 'Intérieur' | 'Extérieur' | 'Mixte',
+          budgetRange: formData.budgetRange as
+            | 'Moins de 100 000 FCFA'
+            | '100 000 - 300 000 FCFA'
+            | '300 000 - 600 000 FCFA'
+            | 'Plus de 600 000 FCFA',
+          constraints: formData.constraints
+            .split('\n')
+            .map((v) => v.trim())
+            .filter(Boolean),
+          optionalServices: {
+            homeDelivery: formData.includeDelivery,
+            onSiteInstallation: formData.includeInstallation,
+            expeditedProduction: formData.expeditedProduction,
+          },
+          estimatedPrice: estimatedBudget,
+          notes: formData.notes.trim() || undefined,
+        },
+      });
+
+      setIsSubmitted(true);
+      setSelectedFiles([]);
+      setUploadError('');
+      toast.success("Demande envoyée !", {
+        description: "Nous vous recontacterons sous 48h avec un devis personnalisé.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Impossible d'envoyer la demande pour le moment.";
+      if (uploadingStep || isUploading) {
+        setUploadError(message);
+      } else {
+        setFormError(message);
+      }
+      toast.error(message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleMoodboardSelection = (files: FileList | null) => {
+    setUploadError('');
+    if (!files || files.length === 0) {
+      setSelectedFiles([]);
+      return;
+    }
+    const picked = Array.from(files);
+    if (picked.length > MOODBOARD_MAX_FILES) {
+      setUploadError(`Vous pouvez joindre au maximum ${MOODBOARD_MAX_FILES} images.`);
+      return;
+    }
+    const invalidType = picked.find((file) => !MOODBOARD_ACCEPT.includes(file.type));
+    if (invalidType) {
+      setUploadError('Formats acceptés: JPG, PNG, WebP.');
+      return;
+    }
+    const oversized = picked.find((file) => file.size > MOODBOARD_MAX_BYTES);
+    if (oversized) {
+      setUploadError('Chaque image doit faire 5 Mo maximum.');
+      return;
+    }
+    setSelectedFiles(picked);
   };
 
   if (isSubmitted) {
@@ -197,6 +347,40 @@ export default function CustomOrder() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-3">
+                  <Label htmlFor="quantity" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Quantité</Label>
+                  <Input id="quantity" type="number" min={1} className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} />
+                </div>
+                <div className="space-y-3">
+                  <Label htmlFor="usageContext" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Usage</Label>
+                  <Select onValueChange={(val: string) => setFormData({...formData, usageContext: val})}>
+                    <SelectTrigger className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all">
+                      <SelectValue placeholder="Sélectionner" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl">
+                      <SelectItem value="Intérieur">Intérieur</SelectItem>
+                      <SelectItem value="Extérieur">Extérieur</SelectItem>
+                      <SelectItem value="Mixte">Mixte</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-3">
+                  <Label htmlFor="budgetRange" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Fourchette budget</Label>
+                  <Select onValueChange={(val: string) => setFormData({...formData, budgetRange: val})}>
+                    <SelectTrigger className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all">
+                      <SelectValue placeholder="Sélectionner" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl">
+                      <SelectItem value="Moins de 100 000 FCFA">Moins de 100 000 FCFA</SelectItem>
+                      <SelectItem value="100 000 - 300 000 FCFA">100 000 - 300 000 FCFA</SelectItem>
+                      <SelectItem value="300 000 - 600 000 FCFA">300 000 - 600 000 FCFA</SelectItem>
+                      <SelectItem value="Plus de 600 000 FCFA">Plus de 600 000 FCFA</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div className="space-y-3">
                 <Label htmlFor="description" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Description de votre projet</Label>
                 <Textarea 
@@ -209,38 +393,129 @@ export default function CustomOrder() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
                 <div className="space-y-3">
-                  <Label htmlFor="dimensions" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Dimensions approximatives</Label>
+                  <Label htmlFor="widthCm" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Largeur (cm)</Label>
                   <div className="relative">
                     <Ruler className="absolute left-6 top-6 h-5 w-5 text-primary/40" />
-                    <Input id="dimensions" placeholder="ex: 120 x 80 cm" className="h-16 rounded-full pl-16 pr-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.dimensions} onChange={e => setFormData({...formData, dimensions: e.target.value})} />
+                    <Input id="widthCm" type="number" min={1} placeholder="ex: 120" className="h-16 rounded-full pl-16 pr-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.widthCm} onChange={e => setFormData({...formData, widthCm: e.target.value})} />
                   </div>
                 </div>
                 <div className="space-y-3">
-                  <Label htmlFor="finish" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Finition & Couleur</Label>
+                  <Label htmlFor="heightCm" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Hauteur (cm)</Label>
                   <div className="relative">
                     <Palette className="absolute left-6 top-6 h-5 w-5 text-primary/40" />
-                    <Input id="finish" placeholder="ex: Ciment blanc, Terracotta..." className="h-16 rounded-full pl-16 pr-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.finish} onChange={e => setFormData({...formData, finish: e.target.value})} />
+                    <Input id="heightCm" type="number" min={1} placeholder="ex: 80" className="h-16 rounded-full pl-16 pr-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.heightCm} onChange={e => setFormData({...formData, heightCm: e.target.value})} />
                   </div>
                 </div>
+                <div className="space-y-3">
+                  <Label htmlFor="depthCm" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Profondeur (cm, optionnel)</Label>
+                  <Input id="depthCm" type="number" min={1} placeholder="ex: 15" className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.depthCm} onChange={e => setFormData({...formData, depthCm: e.target.value})} />
+                </div>
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <div className="space-y-3">
+                  <Label htmlFor="finish" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Finitions (séparées par virgules)</Label>
+                  <Input id="finish" placeholder="ex: Ciment blanc, Mat, Texturé" className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.finish} onChange={e => setFormData({...formData, finish: e.target.value})} />
+                </div>
+                <div className="space-y-3">
+                  <Label htmlFor="desiredColors" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Palette couleurs (virgules)</Label>
+                  <Input id="desiredColors" placeholder="ex: Ivoire, Terracotta, Noir" className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.desiredColors} onChange={e => setFormData({...formData, desiredColors: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="constraints" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Contraintes techniques (une ligne par contrainte)</Label>
+                <Textarea id="constraints" placeholder="Ex: Accrochage mural obligatoire&#10;Passage de porte 85 cm max" className="min-h-[120px] rounded-[30px] p-6 bg-muted/20 border-none focus:bg-white transition-all" value={formData.constraints} onChange={e => setFormData({...formData, constraints: e.target.value})} />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 rounded-[30px] border border-primary/10 p-6">
+                <label className="flex items-center gap-3 text-sm">
+                  <input type="checkbox" checked={formData.includeDelivery} onChange={e => setFormData({...formData, includeDelivery: e.target.checked})} />
+                  Inclure la livraison
+                </label>
+                <label className="flex items-center gap-3 text-sm">
+                  <input type="checkbox" checked={formData.includeInstallation} onChange={e => setFormData({...formData, includeInstallation: e.target.checked})} />
+                  Inclure l'installation sur site
+                </label>
+                <label className="flex items-center gap-3 text-sm">
+                  <input type="checkbox" checked={formData.expeditedProduction} onChange={e => setFormData({...formData, expeditedProduction: e.target.checked})} />
+                  Demande urgente (production accélérée)
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <div className="space-y-3">
+                  <Label htmlFor="estimatedBudget" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Budget estimatif (FCFA)</Label>
+                  <Input id="estimatedBudget" type="number" min={1} placeholder="ex: 250000" className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.estimatedBudget} onChange={e => setFormData({...formData, estimatedBudget: e.target.value})} />
+                </div>
+                <div className="space-y-3">
+                  <Label htmlFor="notes" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Notes complémentaires</Label>
+                  <Input id="notes" placeholder="Accès chantier, contraintes horaires..." className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                </div>
+              </div>
+
+              {formError && (
+                <p className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">
+                  {formError}
+                </p>
+              )}
  
               <div className="space-y-6">
                 <Label className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Photos d'inspiration (Moodboard)</Label>
-                <div className="border-2 border-dashed border-primary/10 rounded-[40px] p-16 text-center space-y-6 hover:bg-primary/5 transition-all cursor-pointer group">
+                <label
+                  htmlFor="moodboard-upload"
+                  className="block border-2 border-dashed border-primary/10 rounded-[40px] p-16 text-center space-y-6 hover:bg-primary/5 transition-all cursor-pointer group"
+                >
                   <div className="h-20 w-20 bg-primary/5 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
                     <Upload className="h-8 w-8 text-primary/40" />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xl font-serif font-bold">Cliquez pour uploader</p>
-                    <p className="text-sm text-muted-foreground font-light">PNG, JPG jusqu'à 5MB (Max 5 photos)</p>
+                    <p className="text-xl font-serif font-bold">
+                      {selectedFiles.length > 0
+                        ? `${selectedFiles.length} image(s) sélectionnée(s)`
+                        : 'Cliquez pour uploader'}
+                    </p>
+                    <p className="text-sm text-muted-foreground font-light">JPG, PNG, WebP jusqu'à 5MB (Max 5 photos)</p>
                   </div>
-                </div>
+                </label>
+                <input
+                  id="moodboard-upload"
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handleMoodboardSelection(e.target.files)}
+                />
+                {selectedFiles.length > 0 && (
+                  <ul className="space-y-2 rounded-2xl bg-muted/30 p-4 text-sm">
+                    {selectedFiles.map((file) => (
+                      <li key={`${file.name}-${file.lastModified}`} className="flex items-center justify-between gap-3">
+                        <span className="truncate">{file.name}</span>
+                        <span className="text-muted-foreground">{Math.round(file.size / 1024)} KB</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {uploadedMoodboard.length > 0 && (
+                  <p className="text-sm text-emerald-700">
+                    {uploadedMoodboard.length} image(s) déjà téléversée(s) pour cette demande.
+                  </p>
+                )}
+                {uploadError && (
+                  <p className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-700">
+                    {uploadError}
+                  </p>
+                )}
               </div>
  
-              <Button type="submit" className="w-full h-20 rounded-full text-xl font-bold shadow-2xl shadow-primary/20">
-                Envoyer ma demande <Send className="ml-3 h-6 w-6" />
+              <Button
+                type="submit"
+                disabled={isUploading}
+                className="w-full h-20 rounded-full text-xl font-bold shadow-2xl shadow-primary/20"
+              >
+                {isUploading ? 'Téléversement en cours...' : 'Envoyer ma demande'} <Send className="ml-3 h-6 w-6" />
               </Button>
             </form>
           </div>

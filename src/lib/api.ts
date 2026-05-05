@@ -13,6 +13,9 @@ function normalizeApiBase(raw: string | undefined): string {
  * - Si vide en prod : requêtes relatives `/api/...` (proxy Netlify requis).
  */
 function apiBase(): string {
+  // En développement, on privilégie toujours le proxy Vite (`/api -> localhost:5050`).
+  // Cela évite d'utiliser accidentellement une URL d'API de production définie dans `.env`.
+  if (import.meta.env.DEV) return '';
   return normalizeApiBase(import.meta.env.VITE_API_URL);
 }
 
@@ -49,6 +52,28 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
           'Reponse HTML au lieu de JSON (souvent /api non proxifie). Verifiez le rewrite Netlify vers /.netlify/functions/api, ou configurez VITE_API_URL/dist/_redirects.'
         );
       }
+      data = null;
+    }
+  }
+  if (!res.ok) {
+    const msg =
+      data && typeof data === 'object' && data !== null && 'error' in data
+        ? String((data as { error: unknown }).error)
+        : text || res.statusText;
+    throw new ApiError(res.status, msg);
+  }
+  return data as T;
+}
+
+export async function apiFormData<T>(path: string, body: FormData, init?: RequestInit): Promise<T> {
+  const headers = { ...(init?.headers as Record<string, string> | undefined) };
+  const res = await fetch(buildUrl(path), { ...init, method: init?.method ?? 'POST', body, headers });
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text) as unknown;
+    } catch {
       data = null;
     }
   }

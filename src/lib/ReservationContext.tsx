@@ -55,6 +55,7 @@ export function ReservationProvider({ children }: { children: React.ReactNode })
       setReservations((prev) => [doc, ...prev]);
     } catch (e) {
       console.error('Failed to add reservation to DB:', e);
+      throw e;
     }
   };
 
@@ -78,6 +79,7 @@ export function ReservationProvider({ children }: { children: React.ReactNode })
       setCustomOrders((prev) => [doc, ...prev]);
     } catch (e) {
       console.error('Failed to add custom order to DB:', e);
+      throw e;
     }
   };
 

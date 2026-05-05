@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, ShieldCheck, CreditCard, Smartphone, Banknote, Truck, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, ShieldCheck, Smartphone, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +15,7 @@ import { useProducts } from '@/lib/ProductContext';
 import { useOrders } from '@/lib/OrderContext';
 import { useUsers } from '@/lib/UserContext';
 import { usePromos } from '@/lib/PromoContext';
+import { ApiError, apiJson } from '@/lib/api';
 import { Gift, Clock, Sparkles, Tag, X } from 'lucide-react';
 import type { CheckoutPaymentMethod } from '@/lib/mobile-money-checkout';
 import {
@@ -24,13 +25,16 @@ import {
   isMobileMoneyOperator,
   mapCheckoutPaymentToOrderMethod,
 } from '@/lib/mobile-money-checkout';
+import type { Discount, PromoCode } from '@/types';
 
 export default function Checkout() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('orange');
-  const [paymentStrategy, setPaymentStrategy] = useState<'FULL' | '50-50' | 'CASH'>('FULL');
   const [paymentReference, setPaymentReference] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
+  const [placedTransactionId, setPlacedTransactionId] = useState<string | null>(null);
 
   const { items, clearCart, totalPrice } = useCart();
   const { decrementStock } = useProducts();
@@ -46,10 +50,10 @@ export default function Checkout() {
     commune: ''
   });
 
-  const [appliedDiscount, setAppliedDiscount] = useState<any>(null);
+  const [appliedDiscount, setAppliedDiscount] = useState<Discount | null>(null);
   const { validatePromo } = usePromos();
   const [promoInput, setPromoInput] = useState('');
-  const [appliedPromo, setAppliedPromo] = useState<any>(null);
+  const [appliedPromo, setAppliedPromo] = useState<PromoCode | null>(null);
 
   const activeDiscounts = currentUser?.wallet.filter(d => !d.isUsed && new Date(d.expiryDate) > new Date()) || [];
 
@@ -80,49 +84,155 @@ export default function Checkout() {
 
   const finalTotal = Math.max(0, totalPrice - getDiscountAmount());
 
-  const amountDueNow = computeAmountDueNow(finalTotal, paymentMethod, paymentStrategy);
+  const amountDueNow = computeAmountDueNow(finalTotal, paymentMethod, 'FULL');
 
   const mobileInstructions = useMemo(() => {
     if (!isMobileMoneyOperator(paymentMethod)) return null;
     return getMobileMoneyInstructions(paymentMethod, amountDueNow, formData.fullName);
   }, [paymentMethod, amountDueNow, formData.fullName]);
 
+  const isStepOneValid = useMemo(() => {
+    const name = formData.fullName.trim();
+    const email = formData.email.trim();
+    const phone = formData.phone.trim();
+    const commune = formData.commune.trim();
+    const address = formData.address.trim();
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const phoneOk = /^[+\d][\d\s-]{7,}$/.test(phone);
+    return Boolean(name && emailOk && phoneOk && commune && address);
+  }, [formData]);
+
+  const validateStepOneOrNotify = () => {
+    if (isStepOneValid) return true;
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
+    const phoneOk = /^[+\d][\d\s-]{7,}$/.test(formData.phone.trim());
+    if (!formData.fullName.trim()) {
+      toast.error('Veuillez renseigner votre nom complet.');
+      return false;
+    }
+    if (!emailOk) {
+      toast.error('Veuillez saisir une adresse email valide.');
+      return false;
+    }
+    if (!phoneOk) {
+      toast.error('Veuillez saisir un numéro de téléphone valide.');
+      return false;
+    }
+    if (!formData.commune.trim()) {
+      toast.error("Veuillez renseigner votre commune.");
+      return false;
+    }
+    if (!formData.address.trim()) {
+      toast.error("Veuillez préciser l'adresse de livraison.");
+      return false;
+    }
+    return true;
+  };
+
   const handlePlaceOrder = async () => {
-    // Mark discount as used if any
-    if (appliedDiscount && currentUser) {
-      await useDiscount(currentUser.id, appliedDiscount.id);
+    if (isSubmitting) return;
+    if (isMobileMoneyOperator(paymentMethod) && !navigator.onLine) {
+      toast.error("Paiement mobile indisponible hors ligne. Reconnectez-vous pour payer en ligne.");
+      return;
     }
 
-    // Create and save new order
-    const nextOrderId = `PBH-2026-${Math.floor(Math.random() * 900) + 100}`;
-    const refTrim = paymentReference.trim();
-    await addOrder({
-      id: nextOrderId,
-      userId: currentUser?.id || "guest-" + Math.random().toString(36).substr(2, 9),
-      customerName: formData.fullName,
-      customerEmail: formData.email,
-      customerPhone: formData.phone,
-      items: [...items],
-      total: finalTotal,
-      paymentStrategy: paymentMethod === 'cash' ? 'CASH' : paymentStrategy,
-      amountPaid: paymentMethod === 'cash' ? 0 : (paymentStrategy === '50-50' ? finalTotal / 2 : finalTotal),
-      balanceDue: paymentMethod === 'cash' ? finalTotal : (paymentStrategy === '50-50' ? finalTotal / 2 : 0),
-      status: paymentMethod === 'cash' ? "En attente de paiement" : "Paiement reçu",
-      paymentMethod: mapCheckoutPaymentToOrderMethod(paymentMethod),
-      ...(refTrim && paymentMethod !== 'cash' ? { paymentReference: refTrim } : {}),
-      shippingAddress: {
-        id: "addr-" + nextOrderId,
-        street: formData.address + ", " + formData.commune,
-        city: formData.city,
-        country: "Côte d'Ivoire",
-        isDefault: true
-      },
-      createdAt: new Date().toISOString()
-    });
-    
-    toast.success("Commande passée avec succès !");
-    clearCart();
-    setStep(3);
+    setIsSubmitting(true);
+    try {
+      let paymentConfirmationId: string | undefined;
+      let paymentTransactionId: string | undefined;
+      let paymentConfirmedAt: string | undefined;
+      if (isMobileMoneyOperator(paymentMethod)) {
+        const refTrim = paymentReference.trim();
+        if (!refTrim) {
+          toast.error('Référence de transaction requise pour confirmer le prélèvement mobile.');
+          return;
+        }
+        const paymentMethodLabel = mapCheckoutPaymentToOrderMethod(paymentMethod);
+        const chargeResult = await apiJson<{
+          paymentConfirmationId: string;
+          transactionId: string;
+          status: string;
+          confirmedAt: string;
+        }>('/api/payments/mobile/charge', {
+          method: 'POST',
+          body: JSON.stringify({
+            paymentMethod: paymentMethodLabel,
+            amount: amountDueNow,
+            customerPhone: formData.phone,
+            paymentReference: refTrim,
+          }),
+        });
+        if (!chargeResult.paymentConfirmationId || chargeResult.status !== 'CONFIRMED') {
+          toast.error('Prélèvement mobile non confirmé. La commande n’a pas été créée.');
+          return;
+        }
+        paymentConfirmationId = chargeResult.paymentConfirmationId;
+        paymentTransactionId = chargeResult.transactionId;
+        paymentConfirmedAt = chargeResult.confirmedAt;
+      }
+
+      // Create and save new order
+      const nextOrderId = `PBH-2026-${Math.floor(Math.random() * 900) + 100}`;
+      const refTrim = paymentReference.trim();
+      await addOrder({
+        id: nextOrderId,
+        userId: currentUser?.id || "guest-" + Math.random().toString(36).substr(2, 9),
+        customerName: formData.fullName,
+        customerEmail: formData.email,
+        customerPhone: formData.phone,
+        items: [...items],
+        total: finalTotal,
+        paymentStrategy: 'FULL',
+        amountPaid: finalTotal,
+        balanceDue: 0,
+        // Aucun prélèvement n'est techniquement vérifié ici: la commande démarre en attente.
+        status: 'En attente de paiement',
+        paymentMethod: mapCheckoutPaymentToOrderMethod(paymentMethod),
+        ...(paymentConfirmationId ? { paymentConfirmationId } : {}),
+        ...(paymentTransactionId ? { paymentTransactionId } : {}),
+        ...(paymentConfirmedAt ? { paymentConfirmedAt } : {}),
+        ...(refTrim ? { paymentReference: refTrim } : {}),
+        shippingAddress: {
+          id: "addr-" + nextOrderId,
+          street: formData.address + ", " + formData.commune,
+          city: formData.city,
+          country: "Côte d'Ivoire",
+          isDefault: true
+        },
+        createdAt: new Date().toISOString()
+      });
+
+      // La remise n'est consommée qu'après persistance de la commande.
+      if (appliedDiscount && currentUser) {
+        await useDiscount(currentUser.id, appliedDiscount.id);
+      }
+
+      for (const item of items) {
+        await decrementStock(item.id, item.quantity);
+      }
+
+      toast.success("Commande passée avec succès !");
+      setPlacedOrderId(nextOrderId);
+      setPlacedTransactionId(paymentTransactionId ?? null);
+      clearCart();
+      setStep(3);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Impossible d'enregistrer la commande.";
+      if (error instanceof ApiError) {
+        const m = message.toLowerCase();
+        if (m.includes('timeout')) {
+          toast.error('Le prélèvement a expiré (time-out). Réessayez.');
+        } else if (m.includes('annul')) {
+          toast.error('Prélèvement annulé. La commande n’a pas été validée.');
+        } else {
+          toast.error(message);
+        }
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (step === 3) {
@@ -138,8 +248,13 @@ export default function Checkout() {
           </div>
           <h1 className="text-2xl font-serif font-bold sm:text-4xl">Commande Confirmée</h1>
           <p className="text-base text-muted-foreground sm:text-lg">
-            Merci pour votre achat ! Votre commande <span className="font-bold text-foreground">#PBH-2026-001</span> a été enregistrée. Vous recevrez un email de confirmation avec votre facture PDF sous peu.
+            Merci pour votre achat ! Votre commande <span className="font-bold text-foreground">#{placedOrderId ?? 'PBH-2026-...'}</span> a été enregistrée.
           </p>
+          {placedTransactionId && (
+            <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
+              Référence transaction mobile confirmée : <span className="font-bold">{placedTransactionId}</span>
+            </p>
+          )}
           <div className="bg-muted/30 p-6 rounded-2xl border w-full text-left space-y-4">
             <h4 className="font-bold uppercase tracking-widest text-xs">Prochaines étapes</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
@@ -212,7 +327,14 @@ export default function Checkout() {
                   <Label htmlFor="address">Précisions adresse (Rue, Villa, Appt)</Label>
                   <Input id="address" placeholder="ex: Rue des Jardins, Villa 45" className="rounded-xl h-12" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
                 </div>
-                <Button className="w-full h-14 rounded-full text-lg font-bold" onClick={() => setStep(2)}>
+                <Button
+                  className="w-full h-14 rounded-full text-lg font-bold"
+                  onClick={() => {
+                    if (!validateStepOneOrNotify()) return;
+                    setStep(2);
+                  }}
+                  disabled={!isStepOneValid}
+                >
                   Continuer vers le paiement
                 </Button>
               </motion.div>
@@ -269,7 +391,7 @@ export default function Checkout() {
                 )}
 
                 <div className="space-y-6">
-                  <h3 className="text-xl font-serif font-bold">Mobile money & autres moyens</h3>
+                  <h3 className="text-xl font-serif font-bold">Mobile money</h3>
                   <RadioGroup
                     value={paymentMethod}
                     onValueChange={(v) => setPaymentMethod(v as CheckoutPaymentMethod)}
@@ -307,121 +429,27 @@ export default function Checkout() {
                       <RadioGroupItem value="wave" id="wave" className="sr-only" />
                     </Label>
 
-                    <Label
-                      htmlFor="mtn"
-                      className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border-2 p-3 transition-all sm:flex-row sm:items-center sm:justify-between sm:p-4 ${paymentMethod === 'mtn' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#FFCC00] text-[10px] font-bold text-black">
-                          MTN
-                        </div>
-                        <div className="min-w-0 space-y-0.5">
-                          <p className="font-bold leading-tight">MTN MoMo</p>
-                          <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Mobile Money</p>
-                        </div>
-                      </div>
-                      <RadioGroupItem value="mtn" id="mtn" className="sr-only" />
-                    </Label>
-
-                    <Label
-                      htmlFor="moov"
-                      className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border-2 p-3 transition-all sm:flex-row sm:items-center sm:justify-between sm:p-4 ${paymentMethod === 'moov' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#0066B3] text-[9px] font-bold leading-tight text-white">
-                          M
-                        </div>
-                        <div className="min-w-0 space-y-0.5">
-                          <p className="font-bold leading-tight">Moov / Flooz</p>
-                          <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Mobile Money</p>
-                        </div>
-                      </div>
-                      <RadioGroupItem value="moov" id="moov" className="sr-only" />
-                    </Label>
-
-                    <Label
-                      htmlFor="bank"
-                      className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border-2 p-3 transition-all sm:flex-row sm:items-center sm:justify-between sm:p-4 ${paymentMethod === 'bank' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                          <CreditCard className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 space-y-0.5">
-                          <p className="font-bold leading-tight">Virement bancaire</p>
-                          <p className="text-[9px] uppercase tracking-widest text-muted-foreground">RIB sur demande</p>
-                        </div>
-                      </div>
-                      <RadioGroupItem value="bank" id="bank" className="sr-only" />
-                    </Label>
-
-                    <Label
-                      htmlFor="cash"
-                      className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border-2 p-3 transition-all sm:flex-row sm:items-center sm:justify-between sm:p-4 ${paymentMethod === 'cash' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                          <Banknote className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 space-y-0.5">
-                          <p className="font-bold leading-tight">À la livraison</p>
-                          <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Espèces</p>
-                        </div>
-                      </div>
-                      <RadioGroupItem value="cash" id="cash" className="sr-only" />
-                    </Label>
                   </RadioGroup>
                 </div>
 
-                {paymentMethod !== 'cash' && (
-                  <div className="space-y-6">
-                    <h3 className="text-xl font-serif font-bold">Modalité de paiement</h3>
-                    <RadioGroup 
-                      value={paymentStrategy} 
-                      onValueChange={(val: any) => setPaymentStrategy(val)} 
-                      className="grid grid-cols-1 md:grid-cols-2 gap-4"
-                    >
-                      <Label
-                        htmlFor="full"
-                        className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border-2 p-4 transition-all sm:flex-row sm:items-center sm:justify-between sm:p-6 ${paymentStrategy === 'FULL' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                      >
-                        <div className="space-y-1">
-                          <p className="font-bold">Payer la totalité</p>
-                          <p className="text-[10px] text-muted-foreground uppercase tracking-widest">100% à la commande</p>
-                        </div>
-                        <RadioGroupItem value="FULL" id="full" className="sr-only" />
-                      </Label>
-
-                      <Label
-                        htmlFor="half"
-                        className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border-2 p-4 transition-all sm:flex-row sm:items-center sm:justify-between sm:p-6 ${paymentStrategy === '50-50' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                      >
-                        <div className="space-y-1">
-                          <p className="font-bold">Acompte 50%</p>
-                          <p className="text-[10px] text-muted-foreground uppercase tracking-widest text-primary">50% maintenant, 50% à la livraison</p>
-                        </div>
-                        <RadioGroupItem value="50-50" id="half" className="sr-only" />
-                      </Label>
-                    </RadioGroup>
+                {isMobileMoneyOperator(paymentMethod) && (
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
+                    Le paiement mobile est traité uniquement en ligne et en totalité au moment de la commande.
                   </div>
                 )}
 
                 <div className="space-y-4 rounded-2xl border bg-muted/30 p-4 sm:p-5">
-                  {paymentMethod !== 'cash' && (
-                    <div className="flex flex-wrap items-center gap-2 text-primary">
-                      <Smartphone className="h-5 w-5 shrink-0" />
-                      <span className="font-bold">Montant à régler maintenant</span>
-                      <span className="ml-auto rounded-full bg-primary/15 px-3 py-1 text-sm font-bold tabular-nums text-primary">
-                        {amountDueNow.toLocaleString('fr-FR')} FCFA
-                      </span>
-                    </div>
-                  )}
-                  {paymentMethod !== 'cash' && paymentMethod !== 'bank' && (
-                    <p className="text-xs text-muted-foreground">
-                      Numéro marchand :{' '}
-                      <span className="font-semibold text-foreground">{getMerchantPhoneDisplay()}</span>
-                    </p>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2 text-primary">
+                    <Smartphone className="h-5 w-5 shrink-0" />
+                    <span className="font-bold">Montant à régler maintenant</span>
+                    <span className="ml-auto rounded-full bg-primary/15 px-3 py-1 text-sm font-bold tabular-nums text-primary">
+                      {amountDueNow.toLocaleString('fr-FR')} FCFA
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Numéro marchand :{' '}
+                    <span className="font-semibold text-foreground">{getMerchantPhoneDisplay()}</span>
+                  </p>
 
                   {mobileInstructions && (
                     <div>
@@ -436,45 +464,29 @@ export default function Checkout() {
                     </div>
                   )}
 
-                  {(isMobileMoneyOperator(paymentMethod) || paymentMethod === 'bank') && (
-                    <div className="space-y-2">
-                      <Label htmlFor="payment-ref" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                        Référence de paiement (optionnel)
-                      </Label>
-                      <Input
-                        id="payment-ref"
-                        placeholder={
-                          paymentMethod === 'bank'
-                            ? 'Ex. référence virement, date d’envoi…'
-                            : 'Ex. ID Wave, reçu Orange Money…'
-                        }
-                        className="rounded-xl"
-                        value={paymentReference}
-                        onChange={(e) => setPaymentReference(e.target.value)}
-                      />
-                      <p className="text-[11px] text-muted-foreground">
-                        Utile pour accélérer la vérification côté boutique. Vous pouvez laisser vide.
-                      </p>
-                    </div>
-                  )}
-
-                  {paymentMethod === 'bank' && (
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      Après confirmation, vous recevrez les coordonnées bancaires (RIB / IBAN) par e-mail ou WhatsApp pour effectuer le virement du montant de{' '}
-                      <span className="font-bold text-foreground">{amountDueNow.toLocaleString('fr-FR')} FCFA</span>. Indiquez la référence de votre commande en libellé.
+                  <div className="space-y-2">
+                    <Label htmlFor="payment-ref" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      Référence de paiement (obligatoire)
+                    </Label>
+                    <Input
+                      id="payment-ref"
+                      placeholder="Ex. ID Wave, reçu Orange Money…"
+                      className="rounded-xl"
+                      value={paymentReference}
+                      onChange={(e) => setPaymentReference(e.target.value)}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Requise pour confirmer le prélèvement côté serveur et valider la commande.
                     </p>
-                  )}
-
-                  {paymentMethod === 'cash' && (
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      Aucun paiement en ligne : vous réglerez la totalité de{' '}
-                      <span className="font-bold text-foreground">{finalTotal.toLocaleString('fr-FR')} FCFA</span> en espèces au livreur. Les frais de livraison restent à votre charge.
-                    </p>
-                  )}
+                  </div>
                 </div>
 
-                <Button className="w-full h-14 rounded-full text-lg font-bold" onClick={handlePlaceOrder}>
-                  Confirmer la commande
+                <Button
+                  className="w-full h-14 rounded-full text-lg font-bold"
+                  onClick={handlePlaceOrder}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Traitement du prélèvement...' : 'Confirmer la commande'}
                 </Button>
               </motion.div>
             )}
@@ -557,14 +569,19 @@ export default function Checkout() {
                         <Tag className="h-4 w-4" />
                         <span className="text-xs font-bold uppercase tracking-widest">{appliedPromo.code}</span>
                       </div>
-                      <button onClick={() => setAppliedPromo(null)} className="text-green-700 hover:scale-110 transition-transform">
+                      <button
+                        onClick={() => setAppliedPromo(null)}
+                        className="text-green-700 transition-transform hover:scale-110"
+                        aria-label="Retirer le code promo"
+                        title="Retirer le code promo"
+                      >
                         <X className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
                 )}
                 
-                {step === 2 && paymentMethod !== 'cash' && (
+                {step === 2 && (
                   <div className="mt-4 space-y-1 rounded-2xl border border-primary/20 bg-primary/5 p-4">
                     <div className="flex justify-between text-sm">
                       <span className="font-bold text-primary">À régler maintenant</span>
@@ -572,23 +589,6 @@ export default function Checkout() {
                         {amountDueNow.toLocaleString('fr-FR')} FCFA
                       </span>
                     </div>
-                    {amountDueNow < finalTotal && (
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Reste à solder (ex. à la livraison)</span>
-                        <span className="font-medium tabular-nums">
-                          {(finalTotal - amountDueNow).toLocaleString('fr-FR')} FCFA
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {step === 2 && paymentMethod === 'cash' && (
-                  <div className="mt-4 space-y-1 rounded-2xl border border-muted bg-muted/30 p-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-bold">Paiement à la livraison</span>
-                      <span className="font-bold tabular-nums">{finalTotal.toLocaleString('fr-FR')} FCFA</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">Total commande (hors livraison).</p>
                   </div>
                 )}
                 

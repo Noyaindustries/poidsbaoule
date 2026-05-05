@@ -3,8 +3,10 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 import { getDb } from './db';
 import { PRODUCTS } from '../src/constants';
 import type { CustomerTestimonial, ProductComment } from '../src/types';
@@ -12,6 +14,35 @@ import type { CustomerTestimonial, ProductComment } from '../src/types';
 export const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+const uploadDir = path.join(process.cwd(), 'uploads', 'custom-orders');
+fs.mkdirSync(uploadDir, { recursive: true });
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+const allowedUploadMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const maxUploadBytes = 5 * 1024 * 1024;
+const maxUploadFiles = 5;
+
+const customOrderUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadDir),
+    filename: (_req, file, cb) => {
+      const safeExt = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `${Date.now()}-${randomUUID()}${safeExt}`);
+    },
+  }),
+  limits: {
+    fileSize: maxUploadBytes,
+    files: maxUploadFiles,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!allowedUploadMimeTypes.has(file.mimetype)) {
+      cb(new Error('Format non pris en charge. Utilisez JPG, PNG ou WebP.'));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 function toPublicUser(doc: Record<string, unknown>) {
   const { _id, passwordHash, ...rest } = doc;
@@ -38,6 +69,7 @@ async function ensureIndexes(): Promise<void> {
   await db.collection('users').createIndex({ email: 1 }, { unique: true });
   await db.collection('products').createIndex({ id: 1 }, { unique: true });
   await db.collection('orders').createIndex({ id: 1 }, { unique: true });
+  await db.collection('payment_confirmations').createIndex({ id: 1 }, { unique: true });
   await db.collection('promo_codes').createIndex({ id: 1 }, { unique: true });
   await db.collection('promo_codes').createIndex({ code: 1 });
   await db.collection('testimonials').createIndex({ id: 1 }, { unique: true });
@@ -203,6 +235,110 @@ function stripProductCommentBody(raw: unknown): string {
   return s.length > 2000 ? s.slice(0, 2000) : s;
 }
 
+const ALLOWED_PAYMENT_METHODS = new Set(['Wave', 'Orange Money']);
+const MOBILE_MONEY_METHODS = new Set(['Wave', 'Orange Money']);
+const ONLINE_PAYMENT_METHODS = new Set(['Wave', 'Orange Money']);
+const ORDER_ALLOWED_STATUSES = new Set([
+  'En attente de paiement',
+  'Paiement reçu',
+  'En préparation',
+  'Expédiée',
+  'Livrée',
+  'Annulée',
+]);
+
+type NormalizedOrderItem = {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  images: string[];
+};
+
+type PaymentConfirmationRecord = {
+  id: string;
+  paymentMethod: string;
+  amount: number;
+  currency: 'XOF';
+  provider: 'MOCK_MOBILE_MONEY';
+  transactionId: string;
+  status: 'CONFIRMED';
+  createdAt: string;
+  confirmedAt: string;
+  usedAt?: string;
+  orderId?: string;
+};
+
+function toFiniteAmount(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n));
+}
+
+function sanitizeOrderItems(raw: unknown): NormalizedOrderItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const item = entry as Record<string, unknown>;
+      const id = String(item.id ?? '').trim();
+      const name = String(item.name ?? '').trim();
+      const price = toFiniteAmount(item.price);
+      const quantity = Math.max(1, Math.floor(Number(item.quantity)));
+      const images = Array.isArray(item.images)
+        ? item.images.filter((v): v is string => typeof v === 'string')
+        : [];
+      if (!id || !name || !Number.isFinite(price) || !Number.isFinite(quantity)) return null;
+      return { id, name, price, quantity, images };
+    })
+    .filter((v): v is NormalizedOrderItem => v !== null);
+}
+
+function computeTotalFromItems(items: NormalizedOrderItem[]): number {
+  return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+}
+
+function computeAmountDueNow(total: number, paymentMethod: string, paymentStrategy: string): number {
+  void paymentMethod;
+  if (paymentStrategy === '50-50') return Math.round(total / 2);
+  return total;
+}
+
+function sanitizeOrderStatus(value: unknown): string {
+  const status = String(value ?? '');
+  if (!ORDER_ALLOWED_STATUSES.has(status)) return 'En attente de paiement';
+  return status;
+}
+
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidPhone(value: string): boolean {
+  return /^[+\d][\d\s-]{7,}$/.test(value);
+}
+
+function validateOnlineOnlyMobilePayment(order: Record<string, unknown>): string | null {
+  const paymentMethod = String(order.paymentMethod ?? '');
+  if (!MOBILE_MONEY_METHODS.has(paymentMethod)) return null;
+
+  const paymentStrategy = String(order.paymentStrategy ?? '');
+  const amountPaid = Number(order.amountPaid);
+  const total = Number(order.total);
+  const balanceDue = Number(order.balanceDue);
+
+  if (paymentStrategy !== 'FULL') {
+    return 'Le paiement mobile doit être effectué en ligne et en totalité (mode FULL uniquement).';
+  }
+  if (!Number.isFinite(amountPaid) || !Number.isFinite(total) || amountPaid < total) {
+    return 'Paiement mobile refusé: le montant total doit être encaissé en ligne immédiatement.';
+  }
+  if (!Number.isFinite(balanceDue) || balanceDue !== 0) {
+    return 'Paiement mobile refusé: aucun solde différé n’est autorisé.';
+  }
+  return null;
+}
+
 // --- Commentaires produits (vitrine) ---
 app.get('/api/products/:productId/comments', async (req: Request, res: Response) => {
   try {
@@ -304,9 +440,135 @@ app.get('/api/orders', async (_req: Request, res: Response) => {
 app.post('/api/orders', async (req: Request, res: Response) => {
   try {
     const db = await getDb();
-    const order = req.body as Record<string, unknown>;
-    await db.collection('orders').insertOne(order);
-    res.status(201).json({ ok: true });
+    const input = req.body as Record<string, unknown>;
+
+    const id = String(input.id ?? '').trim() || randomUUID();
+    const userId = String(input.userId ?? '').trim() || `guest-${randomUUID()}`;
+    const customerName = String(input.customerName ?? '').trim();
+    const customerEmail = String(input.customerEmail ?? '').trim();
+    const customerPhone = String(input.customerPhone ?? '').trim();
+    const paymentMethod = String(input.paymentMethod ?? '');
+    const paymentStrategy = String(input.paymentStrategy ?? 'FULL').trim();
+    const items = sanitizeOrderItems(input.items);
+    const total = computeTotalFromItems(items);
+    const amountDueNow = computeAmountDueNow(total, paymentMethod, paymentStrategy);
+    const isOnlinePayment = ONLINE_PAYMENT_METHODS.has(paymentMethod);
+    const shippingAddress =
+      input.shippingAddress && typeof input.shippingAddress === 'object'
+        ? (input.shippingAddress as Record<string, unknown>)
+        : {};
+
+    if (!customerName || !customerEmail || !customerPhone) {
+      res.status(400).json({ error: 'Informations client incomplètes.' });
+      return;
+    }
+    if (!isValidEmail(customerEmail)) {
+      res.status(400).json({ error: 'Adresse email invalide.' });
+      return;
+    }
+    if (!isValidPhone(customerPhone)) {
+      res.status(400).json({ error: 'Numéro de téléphone invalide.' });
+      return;
+    }
+    if (!ALLOWED_PAYMENT_METHODS.has(paymentMethod)) {
+      res.status(400).json({ error: 'Moyen de paiement non autorisé.' });
+      return;
+    }
+    if (items.length === 0) {
+      res.status(400).json({ error: 'Le panier est vide ou invalide.' });
+      return;
+    }
+    if (total <= 0) {
+      res.status(400).json({ error: 'Montant de commande invalide.' });
+      return;
+    }
+    const shippingStreet = String(shippingAddress.street ?? '').trim();
+    const shippingCity = String(shippingAddress.city ?? '').trim();
+    if (!shippingStreet || !shippingCity) {
+      res.status(400).json({ error: 'Adresse de livraison incomplète.' });
+      return;
+    }
+
+    const mobilePaymentError = validateOnlineOnlyMobilePayment({
+      paymentMethod,
+      paymentStrategy,
+      amountPaid: amountDueNow,
+      total,
+      balanceDue: Math.max(total - amountDueNow, 0),
+    });
+    if (mobilePaymentError) {
+      res.status(400).json({ error: mobilePaymentError });
+      return;
+    }
+
+    let paymentConfirmation: PaymentConfirmationRecord | null = null;
+    if (isOnlinePayment) {
+      const paymentConfirmationId = String(input.paymentConfirmationId ?? '').trim();
+      if (!paymentConfirmationId) {
+        res.status(400).json({
+          error: 'Paiement en ligne requis avant validation: confirmation de transaction manquante.',
+        });
+        return;
+      }
+      paymentConfirmation = (await db.collection('payment_confirmations').findOne({
+        id: paymentConfirmationId,
+        status: 'CONFIRMED',
+        usedAt: { $exists: false },
+      })) as PaymentConfirmationRecord | null;
+
+      if (!paymentConfirmation) {
+        res.status(400).json({ error: 'Preuve de paiement invalide ou déjà utilisée.' });
+        return;
+      }
+      if (paymentConfirmation.paymentMethod !== paymentMethod) {
+        res.status(400).json({ error: 'La preuve de paiement ne correspond pas au moyen sélectionné.' });
+        return;
+      }
+      if (paymentConfirmation.amount < amountDueNow) {
+        res.status(400).json({ error: 'Montant encaissé insuffisant pour valider la commande.' });
+        return;
+      }
+    }
+
+    const now = new Date().toISOString();
+    const orderDoc = {
+      id,
+      userId,
+      customerName,
+      customerEmail,
+      customerPhone,
+      items,
+      total,
+      paymentMethod,
+      paymentStrategy,
+      amountPaid: isOnlinePayment ? amountDueNow : 0,
+      balanceDue: isOnlinePayment ? Math.max(total - amountDueNow, 0) : total,
+      status: isOnlinePayment ? 'Paiement reçu' : 'En attente de paiement',
+      shippingAddress: {
+        id: String(shippingAddress.id ?? `addr-${id}`),
+        street: shippingStreet,
+        city: shippingCity,
+        country: String(shippingAddress.country ?? "Côte d'Ivoire").trim(),
+        isDefault: Boolean(shippingAddress.isDefault ?? true),
+      },
+      paymentReference:
+        typeof input.paymentReference === 'string' && input.paymentReference.trim()
+          ? input.paymentReference.trim().slice(0, 120)
+          : undefined,
+      paymentConfirmationId: paymentConfirmation?.id,
+      paymentTransactionId: paymentConfirmation?.transactionId,
+      paymentConfirmedAt: paymentConfirmation?.confirmedAt,
+      createdAt: typeof input.createdAt === 'string' && input.createdAt ? input.createdAt : now,
+    };
+
+    await db.collection('orders').insertOne(orderDoc);
+    if (paymentConfirmation) {
+      await db.collection('payment_confirmations').updateOne(
+        { id: paymentConfirmation.id },
+        { $set: { usedAt: now, orderId: id } }
+      );
+    }
+    res.status(201).json({ ok: true, orderId: id });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Erreur création commande' });
@@ -316,12 +578,106 @@ app.post('/api/orders', async (req: Request, res: Response) => {
 app.patch('/api/orders/:id', async (req: Request, res: Response) => {
   try {
     const db = await getDb();
+    const order = (await db.collection('orders').findOne({
+      id: req.params.id,
+    })) as Record<string, unknown> | null;
+    if (!order) {
+      res.status(404).json({ error: 'commande introuvable' });
+      return;
+    }
     const patch = req.body as Record<string, unknown>;
-    await db.collection('orders').updateOne({ id: req.params.id }, { $set: patch });
+    if ('total' in patch || 'amountPaid' in patch || 'balanceDue' in patch) {
+      res.status(400).json({ error: 'Champs financiers protégés côté serveur.' });
+      return;
+    }
+
+    const sanitizedPatch: Record<string, unknown> = {};
+    if ('status' in patch) {
+      const nextStatus = sanitizeOrderStatus(patch.status);
+      const isOnlineOrder = ONLINE_PAYMENT_METHODS.has(String(order.paymentMethod ?? ''));
+      const isPaidStatus = nextStatus !== 'En attente de paiement';
+      const hasServerPaymentProof = Boolean(
+        order.paymentConfirmationId && order.paymentTransactionId && order.paymentConfirmedAt
+      );
+      if (isOnlineOrder && isPaidStatus && !hasServerPaymentProof) {
+        res.status(400).json({
+          error: 'Impossible de valider la commande: aucun paiement en ligne confirmé côté serveur.',
+        });
+        return;
+      }
+      sanitizedPatch.status = nextStatus;
+    }
+
+    await db.collection('orders').updateOne({ id: req.params.id }, { $set: sanitizedPatch });
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Erreur mise à jour commande' });
+  }
+});
+
+app.post('/api/payments/mobile/charge', async (req: Request, res: Response) => {
+  try {
+    const pspMode = String(process.env.MOBILE_MONEY_PSP_MODE ?? '').toLowerCase();
+    if (pspMode !== 'mock') {
+      res.status(503).json({
+        error:
+          'Prélèvement mobile indisponible: aucun PSP configuré côté serveur. Activez MOBILE_MONEY_PSP_MODE=mock pour les tests.',
+      });
+      return;
+    }
+
+    const payload = req.body as Record<string, unknown>;
+    const paymentMethod = String(payload.paymentMethod ?? '');
+    const amount = toFiniteAmount(payload.amount);
+    const customerPhone = String(payload.customerPhone ?? '').trim();
+    const paymentReference = String(payload.paymentReference ?? '').trim();
+
+    if (!MOBILE_MONEY_METHODS.has(paymentMethod)) {
+      res.status(400).json({ error: 'Moyen de paiement mobile invalide.' });
+      return;
+    }
+    if (amount <= 0) {
+      res.status(400).json({ error: 'Montant de prélèvement invalide.' });
+      return;
+    }
+    if (!customerPhone) {
+      res.status(400).json({ error: 'Numéro client requis pour le prélèvement mobile.' });
+      return;
+    }
+    if (!paymentReference) {
+      res.status(400).json({ error: 'Référence transaction requise pour confirmer le prélèvement.' });
+      return;
+    }
+
+    const db = await getDb();
+    const now = new Date().toISOString();
+    const confirmation: PaymentConfirmationRecord = {
+      id: randomUUID(),
+      paymentMethod,
+      amount,
+      currency: 'XOF',
+      provider: 'MOCK_MOBILE_MONEY',
+      transactionId: `MM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      status: 'CONFIRMED',
+      createdAt: now,
+      confirmedAt: now,
+    };
+    await db.collection('payment_confirmations').insertOne({
+      ...confirmation,
+      customerPhone,
+      paymentReference: paymentReference.slice(0, 120),
+    });
+    res.status(201).json({
+      ok: true,
+      paymentConfirmationId: confirmation.id,
+      transactionId: confirmation.transactionId,
+      status: confirmation.status,
+      confirmedAt: confirmation.confirmedAt,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur prélèvement mobile' });
   }
 });
 
@@ -355,7 +711,50 @@ app.get('/api/reservations', async (_req: Request, res: Response) => {
 app.post('/api/reservations', async (req: Request, res: Response) => {
   try {
     const db = await getDb();
-    await db.collection('reservations').insertOne(req.body);
+    const body = req.body as Record<string, unknown>;
+    const customerName = String(body.customerName ?? '').trim();
+    const email = String(body.email ?? '').trim();
+    const phone = String(body.phone ?? '').trim();
+    const type = String(body.type ?? '').trim();
+    const neighborhood = String(body.neighborhood ?? '').trim();
+    const surface = Number(body.surface);
+    const serviceDetails =
+      body.serviceDetails && typeof body.serviceDetails === 'object'
+        ? (body.serviceDetails as Record<string, unknown>)
+        : null;
+
+    if (!customerName || !email || !phone || !type) {
+      res.status(400).json({ error: 'Nom, email, téléphone et prestation sont requis.' });
+      return;
+    }
+    if (!Number.isFinite(surface) || surface <= 0) {
+      res.status(400).json({ error: 'Surface invalide.' });
+      return;
+    }
+    if (!neighborhood) {
+      res.status(400).json({ error: 'Quartier/commune requis.' });
+      return;
+    }
+    if (serviceDetails) {
+      const preferredDate = String(serviceDetails.preferredDate ?? '').trim();
+      const preferredTimeSlot = String(serviceDetails.preferredTimeSlot ?? '').trim();
+      const estimatedDurationHours = Number(serviceDetails.estimatedDurationHours);
+      const estimatedCost = Number(serviceDetails.estimatedCost);
+      if (!preferredDate || !preferredTimeSlot) {
+        res.status(400).json({ error: 'Date et créneau souhaités requis pour la prestation déco.' });
+        return;
+      }
+      if (!Number.isFinite(estimatedDurationHours) || estimatedDurationHours < 1) {
+        res.status(400).json({ error: 'Durée estimée invalide.' });
+        return;
+      }
+      if (!Number.isFinite(estimatedCost) || estimatedCost <= 0) {
+        res.status(400).json({ error: 'Coût estimatif invalide.' });
+        return;
+      }
+    }
+
+    await db.collection('reservations').insertOne(body);
     res.status(201).json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -392,10 +791,81 @@ app.get('/api/custom-orders', async (_req: Request, res: Response) => {
   }
 });
 
+app.post('/api/custom-orders/upload', (req: Request, res: Response) => {
+  customOrderUpload.array('files', maxUploadFiles)(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          res.status(400).json({ error: 'Chaque fichier doit faire 5 Mo maximum.' });
+          return;
+        }
+        if (err.code === 'LIMIT_FILE_COUNT') {
+          res.status(400).json({ error: 'Vous pouvez envoyer au maximum 5 images.' });
+          return;
+        }
+      }
+      const message = err instanceof Error ? err.message : 'Erreur lors du téléversement.';
+      res.status(400).json({ error: message });
+      return;
+    }
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    if (files.length === 0) {
+      res.status(400).json({ error: 'Aucun fichier reçu.' });
+      return;
+    }
+    res.status(201).json({
+      files: files.map((file) => ({
+        url: `/uploads/custom-orders/${file.filename}`,
+        originalName: file.originalname,
+        size: file.size,
+        mimeType: file.mimetype,
+      })),
+    });
+  });
+});
+
 app.post('/api/custom-orders', async (req: Request, res: Response) => {
   try {
     const db = await getDb();
-    await db.collection('custom_orders').insertOne(req.body);
+    const body = req.body as Record<string, unknown>;
+    const customerName = String(body.customerName ?? '').trim();
+    const email = String(body.email ?? '').trim();
+    const type = String(body.type ?? '').trim();
+    const description = String(body.description ?? '').trim();
+    const preferredDeadline = String(body.preferredDeadline ?? '').trim();
+    const customization =
+      body.customization && typeof body.customization === 'object'
+        ? (body.customization as Record<string, unknown>)
+        : null;
+
+    if (!customerName || !email || !type || !description || !preferredDeadline) {
+      res.status(400).json({ error: 'Informations sur mesure incomplètes.' });
+      return;
+    }
+    if (customization) {
+      const quantity = Number(customization.quantity);
+      const estimatedPrice = Number(customization.estimatedPrice);
+      const dimensions =
+        customization.dimensionsCm && typeof customization.dimensionsCm === 'object'
+          ? (customization.dimensionsCm as Record<string, unknown>)
+          : null;
+      const width = Number(dimensions?.width);
+      const height = Number(dimensions?.height);
+      if (!Number.isFinite(quantity) || quantity < 1) {
+        res.status(400).json({ error: 'Quantité invalide pour la commande sur mesure.' });
+        return;
+      }
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+        res.status(400).json({ error: 'Dimensions largeur/hauteur invalides.' });
+        return;
+      }
+      if (!Number.isFinite(estimatedPrice) || estimatedPrice <= 0) {
+        res.status(400).json({ error: 'Prix estimatif invalide.' });
+        return;
+      }
+    }
+
+    await db.collection('custom_orders').insertOne(body);
     res.status(201).json({ ok: true });
   } catch (e) {
     console.error(e);

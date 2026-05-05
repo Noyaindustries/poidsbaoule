@@ -140,7 +140,7 @@ async function main() {
       items: [cartFromProduct(3, 1)],
       total: PRODUCTS[3].price,
       status: 'Livrée' as const,
-      paymentMethod: 'Virement' as const,
+      paymentMethod: 'Wave' as const,
       paymentStrategy: 'FULL' as const,
       amountPaid: PRODUCTS[3].price,
       balanceDue: 0,
