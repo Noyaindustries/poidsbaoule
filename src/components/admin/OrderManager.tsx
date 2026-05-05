@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger, DropdownMenuSeparator 
 } from '@/components/ui/dropdown-menu';
 import { 
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
@@ -220,7 +220,7 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
   };
 
   return (
-    <DialogContent className="h-[100dvh] w-[100vw] max-w-none overflow-y-auto rounded-none border-none p-0 font-sans shadow-2xl sm:h-auto sm:max-h-[90vh] sm:w-[min(96vw,860px)] sm:max-w-[860px] sm:rounded-[32px]">
+    <DialogContent className="w-[min(96vw,960px)] max-w-[960px] max-h-[90vh] overflow-y-auto rounded-[32px] border-none p-0 font-sans shadow-2xl">
       <DialogHeader className="p-8 pb-4">
         <div className="flex items-center justify-between gap-4 mb-2">
           <Badge className="bg-primary/10 text-primary border-none text-[10px] uppercase tracking-widest font-bold">Commande active</Badge>
@@ -506,14 +506,14 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
           />
         </section>
 
-        <DialogFooter className="sticky bottom-0 mt-6 bg-white/90 backdrop-blur-md p-6 border-t flex gap-4">
+        <div className="sticky bottom-0 mt-6 flex gap-4 border-t bg-white/90 p-6 backdrop-blur-md">
           <Button variant="outline" className="flex-1 rounded-full h-14" onClick={() => generateInvoicePDF(order.id)}>
             <FileText className="mr-2 h-4 w-4" /> Facture PDF
           </Button>
           <Button className="flex-[2] rounded-full h-14 text-lg font-bold" onClick={() => handleWhatsApp('shipping')}>
             <Truck className="mr-2 h-5 w-5" /> Prévenir Livraison
           </Button>
-        </DialogFooter>
+        </div>
       </div>
     </DialogContent>
   );
