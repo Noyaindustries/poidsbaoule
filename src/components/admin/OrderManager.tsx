@@ -220,7 +220,7 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
   };
 
   return (
-    <DialogContent className="w-[min(96vw,960px)] max-w-[960px] max-h-[90vh] overflow-y-auto rounded-[32px] border-none p-0 font-sans shadow-2xl">
+    <DialogContent className="w-[min(96vw,960px)] max-w-[960px] max-h-[90vh] overflow-x-hidden overflow-y-auto rounded-[32px] border-none p-0 font-sans shadow-2xl">
       <DialogHeader className="p-8 pb-4">
         <div className="flex items-center justify-between gap-4 mb-2">
           <Badge className="bg-primary/10 text-primary border-none text-[10px] uppercase tracking-widest font-bold">Commande active</Badge>
@@ -232,9 +232,9 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
         </DialogTitle>
       </DialogHeader>
 
-      <div className="p-8 pt-4 pb-32 space-y-12">
+      <div className="min-w-0 p-8 pt-4 pb-32 space-y-12">
         {/* Customer & Status Section */}
-        <section className="grid grid-cols-2 gap-8">
+        <section className="grid grid-cols-1 gap-8 md:grid-cols-2">
           <div className="space-y-4">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Client</h3>
             <div className="space-y-3">
@@ -310,14 +310,14 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
         <Separator className="opacity-50" />
 
         {/* Financial Summary */}
-        <section className="bg-primary/5 p-6 rounded-3xl space-y-4 border border-primary/10">
+        <section className="bg-primary/5 p-6 rounded-3xl space-y-4 border border-primary/10 min-w-0">
           <div className="flex justify-between items-center">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Résumé Financier</h3>
             <Badge className={order.balanceDue === 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}>
               {order.balanceDue === 0 ? "SOLDE RÉGLÉ" : "RESTE À PERCEVOIR"}
             </Badge>
           </div>
-          <div className="grid grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-8">
             <div className="space-y-1">
               <p className="text-[8px] uppercase text-muted-foreground font-bold tracking-[0.2em]">Total</p>
               <p className="text-lg font-bold">{order.total.toLocaleString()} F</p>
@@ -367,7 +367,7 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
               Un solde de <span className="font-bold">{order.balanceDue.toLocaleString()} FCFA</span> est en attente. 
               Utilisez les raccourcis ci-dessous pour relancer le client.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -399,7 +399,7 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
           <div className="flex items-center justify-between">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Communiquer avec le client</h3>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-3">
               <p className="text-[10px] uppercase font-bold text-muted-foreground/60 px-2">WhatsApp</p>
               <div className="flex flex-col gap-2">
@@ -440,10 +440,10 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
             {order.items && order.items.length > 0 ? order.items.map((item: any, idx: number) => (
               <div key={idx} className="flex items-center gap-4">
                 <div className="h-14 w-14 rounded-2xl overflow-hidden bg-white shadow-sm shrink-0">
-                  <img src={item.images[0]} className="w-full h-full object-cover" />
+                  <img src={item.images[0]} alt={item.name} className="w-full h-full object-cover" />
                 </div>
-                <div className="flex-grow">
-                  <p className="text-sm font-bold">{item.name}</p>
+                <div className="grow min-w-0">
+                  <p className="text-sm font-bold wrap-break-word">{item.name}</p>
                   <p className="text-xs text-muted-foreground italic">Catégorie : {item.category}</p>
                 </div>
                 <div className="text-right">
@@ -458,7 +458,7 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
         </section>
 
         {/* Shipping & Payment Section */}
-        <section className="grid grid-cols-2 gap-8">
+        <section className="grid grid-cols-1 gap-8 md:grid-cols-2">
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
               <MapPin className="h-4 w-4 text-primary" />
@@ -506,11 +506,11 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
           />
         </section>
 
-        <div className="sticky bottom-0 mt-6 flex gap-4 border-t bg-white/90 p-6 backdrop-blur-md">
-          <Button variant="outline" className="flex-1 rounded-full h-14" onClick={() => generateInvoicePDF(order.id)}>
+        <div className="sticky bottom-0 mt-6 flex flex-col gap-3 border-t bg-white/90 p-6 backdrop-blur-md sm:flex-row sm:gap-4">
+          <Button variant="outline" className="h-14 w-full rounded-full sm:flex-1" onClick={() => generateInvoicePDF(order.id)}>
             <FileText className="mr-2 h-4 w-4" /> Facture PDF
           </Button>
-          <Button className="flex-[2] rounded-full h-14 text-lg font-bold" onClick={() => handleWhatsApp('shipping')}>
+          <Button className="h-14 w-full rounded-full text-lg font-bold sm:flex-2" onClick={() => handleWhatsApp('shipping')}>
             <Truck className="mr-2 h-5 w-5" /> Prévenir Livraison
           </Button>
         </div>
