@@ -172,7 +172,7 @@ export interface Order {
   items: CartItem[];
   total: number;
   status: 'En attente de paiement' | 'Paiement reçu' | 'En préparation' | 'Expédiée' | 'Livrée' | 'Annulée';
-  paymentMethod: 'Wave' | 'Orange Money';
+  paymentMethod: 'Wave' | 'Orange Money' | 'Paiement à la livraison';
   paymentStrategy: 'FULL' | '50-50' | 'CASH';
   amountPaid: number;
   balanceDue: number;

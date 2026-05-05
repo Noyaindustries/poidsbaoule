@@ -256,7 +256,7 @@ function stripProductCommentBody(raw: unknown): string {
   return s.length > 2000 ? s.slice(0, 2000) : s;
 }
 
-const ALLOWED_PAYMENT_METHODS = new Set(['Wave', 'Orange Money']);
+const ALLOWED_PAYMENT_METHODS = new Set(['Wave', 'Orange Money', 'Paiement à la livraison']);
 const MOBILE_MONEY_METHODS = new Set(['Wave', 'Orange Money']);
 const ONLINE_PAYMENT_METHODS = new Set(['Wave', 'Orange Money']);
 const ORDER_ALLOWED_STATUSES = new Set([

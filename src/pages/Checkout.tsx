@@ -84,7 +84,8 @@ export default function Checkout() {
 
   const finalTotal = Math.max(0, totalPrice - getDiscountAmount());
 
-  const amountDueNow = computeAmountDueNow(finalTotal, paymentMethod, 'FULL');
+  const paymentStrategy = paymentMethod === 'cash' ? 'CASH' : 'FULL';
+  const amountDueNow = computeAmountDueNow(finalTotal, paymentMethod, paymentStrategy);
 
   const mobileInstructions = useMemo(() => {
     if (!isMobileMoneyOperator(paymentMethod)) return null;
@@ -182,11 +183,10 @@ export default function Checkout() {
         customerPhone: formData.phone,
         items: [...items],
         total: finalTotal,
-        paymentStrategy: 'FULL',
-        amountPaid: finalTotal,
-        balanceDue: 0,
-        // Aucun prélèvement n'est techniquement vérifié ici: la commande démarre en attente.
-        status: 'En attente de paiement',
+        paymentStrategy,
+        amountPaid: paymentMethod === 'cash' ? 0 : finalTotal,
+        balanceDue: paymentMethod === 'cash' ? finalTotal : 0,
+        status: paymentMethod === 'cash' ? 'En attente de paiement' : 'Paiement reçu',
         paymentMethod: mapCheckoutPaymentToOrderMethod(paymentMethod),
         ...(paymentConfirmationId ? { paymentConfirmationId } : {}),
         ...(paymentTransactionId ? { paymentTransactionId } : {}),
@@ -429,12 +429,33 @@ export default function Checkout() {
                       <RadioGroupItem value="wave" id="wave" className="sr-only" />
                     </Label>
 
+                    <Label
+                      htmlFor="cash"
+                      className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border-2 p-3 transition-all sm:flex-row sm:items-center sm:justify-between sm:p-4 ${paymentMethod === 'cash' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-sm font-bold text-white">
+                          L
+                        </div>
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="font-bold leading-tight">Payer à la livraison</p>
+                          <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Cash</p>
+                        </div>
+                      </div>
+                      <RadioGroupItem value="cash" id="cash" className="sr-only" />
+                    </Label>
+
                   </RadioGroup>
                 </div>
 
                 {isMobileMoneyOperator(paymentMethod) && (
                   <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
                     Le paiement mobile est traité uniquement en ligne et en totalité au moment de la commande.
+                  </div>
+                )}
+                {paymentMethod === 'cash' && (
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
+                    Vous réglez le montant de la commande à la réception, directement au livreur.
                   </div>
                 )}
 
@@ -464,21 +485,23 @@ export default function Checkout() {
                     </div>
                   )}
 
-                  <div className="space-y-2">
-                    <Label htmlFor="payment-ref" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      Référence de paiement (obligatoire)
-                    </Label>
-                    <Input
-                      id="payment-ref"
-                      placeholder="Ex. ID Wave, reçu Orange Money…"
-                      className="rounded-xl"
-                      value={paymentReference}
-                      onChange={(e) => setPaymentReference(e.target.value)}
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Requise pour confirmer le prélèvement côté serveur et valider la commande.
-                    </p>
-                  </div>
+                  {isMobileMoneyOperator(paymentMethod) && (
+                    <div className="space-y-2">
+                      <Label htmlFor="payment-ref" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                        Référence de paiement (obligatoire)
+                      </Label>
+                      <Input
+                        id="payment-ref"
+                        placeholder="Ex. ID Wave, reçu Orange Money…"
+                        className="rounded-xl"
+                        value={paymentReference}
+                        onChange={(e) => setPaymentReference(e.target.value)}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Requise pour confirmer le prélèvement côté serveur et valider la commande.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <Button

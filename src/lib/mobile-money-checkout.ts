@@ -1,7 +1,7 @@
 import { WHATSAPP_STORE_DISPLAY } from '@/constants';
 import type { Order } from '@/types';
 
-export type CheckoutPaymentMethod = 'wave' | 'orange';
+export type CheckoutPaymentMethod = 'wave' | 'orange' | 'cash';
 
 /** Numéro marchand affiché / encaissement (surcharge possible via `.env`). */
 export function getMerchantPhoneDisplay(): string {
@@ -15,7 +15,7 @@ export function computeAmountDueNow(
   paymentMethod: CheckoutPaymentMethod,
   paymentStrategy: 'FULL' | '50-50' | 'CASH'
 ): number {
-  void paymentMethod;
+  if (paymentMethod === 'cash' || paymentStrategy === 'CASH') return 0;
   if (paymentStrategy === '50-50') return Math.round(finalTotal / 2);
   return finalTotal;
 }
@@ -28,6 +28,7 @@ export function mapCheckoutPaymentToOrderMethod(m: CheckoutPaymentMethod): Order
   const table: Record<CheckoutPaymentMethod, Order['paymentMethod']> = {
     wave: 'Wave',
     orange: 'Orange Money',
+    cash: 'Paiement à la livraison',
   };
   return table[m];
 }
