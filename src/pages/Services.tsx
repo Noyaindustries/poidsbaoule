@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Calendar, Home, Palette, Sparkles, CheckCircle2, ArrowRight, MapPin } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,8 +12,10 @@ import { toast } from 'sonner';
 import { useReservations } from '@/lib/ReservationContext';
 
 export default function Services() {
+  const navigate = useNavigate();
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [formError, setFormError] = useState('');
+  const [currentStep, setCurrentStep] = useState(1);
   const [selectedServiceTitle, setSelectedServiceTitle] = useState('');
   const bookingFormRef = useRef<HTMLElement | null>(null);
 
@@ -81,6 +84,42 @@ export default function Services() {
     setFormData((prev) => ({ ...prev, service: serviceValue }));
     setFormError('');
     bookingFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const totalSteps = 4;
+  const stepMeta = [
+    { title: 'Étape 1 · Vos coordonnées', subtitle: 'Commençons par vos informations de contact.' },
+    { title: 'Étape 2 · Cadrage du projet', subtitle: 'Définissez la prestation et le contexte de votre besoin.' },
+    { title: 'Étape 3 · Planning', subtitle: 'Indiquez vos disponibilités et la durée souhaitée.' },
+    { title: 'Étape 4 · Détails complémentaires', subtitle: 'Affinez les contraintes, options et notes du projet.' },
+  ] as const;
+
+  const goToNextStep = () => {
+    if (currentStep === 1) {
+      if (!formData.name.trim() || !formData.phone.trim() || !formData.email.trim()) {
+        setFormError('Renseignez nom, téléphone et email pour continuer.');
+        return;
+      }
+    }
+    if (currentStep === 2) {
+      if (!formData.service || !formData.projectType || !formData.interventionType || !formData.surface) {
+        setFormError('Sélectionnez la prestation, le type, le mode et la surface.');
+        return;
+      }
+    }
+    if (currentStep === 3) {
+      if (!formData.preferredDate || !formData.preferredTimeSlot || !formData.estimatedDurationHours) {
+        setFormError('Précisez la date, le créneau et la durée estimée.');
+        return;
+      }
+    }
+    setFormError('');
+    setCurrentStep((s) => Math.min(totalSteps, s + 1));
+  };
+
+  const goToPreviousStep = () => {
+    setFormError('');
+    setCurrentStep((s) => Math.max(1, s - 1));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -152,6 +191,7 @@ export default function Services() {
 
       setIsSubmitted(true);
       toast.success("Demande de réservation envoyée !");
+      navigate('/admin', { state: { tab: 'reservations' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Impossible d'envoyer la réservation.";
       setFormError(message);
@@ -313,8 +353,31 @@ export default function Services() {
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="bg-card border rounded-3xl p-8 md:p-12 space-y-8 shadow-sm">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <form onSubmit={handleSubmit} className="space-y-8 rounded-3xl border border-primary/10 bg-card p-8 shadow-sm md:p-12">
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary">Formulaire de réservation</p>
+                <h3 className="font-serif text-2xl font-bold">Informations du projet</h3>
+              </div>
+              <div className="rounded-2xl border border-primary/10 bg-primary/5 p-4">
+                <p className="text-sm font-semibold text-primary">{stepMeta[currentStep - 1].title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{stepMeta[currentStep - 1].subtitle}</p>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-4 gap-2">
+                  {Array.from({ length: totalSteps }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      className={`h-2 rounded-full transition-colors ${idx < currentStep ? 'bg-primary' : 'bg-muted'}`}
+                    />
+                  ))}
+                </div>
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Étape {currentStep} / {totalSteps}
+                </p>
+              </div>
+
+              {currentStep === 1 && (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-3 md:gap-8">
                 <div className="space-y-2">
                   <Label htmlFor="name">Nom complet</Label>
                   <Input id="name" placeholder="Votre nom" required className="rounded-xl" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
@@ -323,21 +386,23 @@ export default function Services() {
                   <Label htmlFor="phone">Téléphone</Label>
                   <Input id="phone" placeholder="+225 ..." required className="rounded-xl" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" placeholder="votre@email.com" required className="rounded-xl" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                </div>
               </div>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" placeholder="votre@email.com" required className="rounded-xl" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {currentStep === 2 && (
+              <>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="service">Prestation souhaitée</Label>
                   <Select value={formData.service} onValueChange={(val: string) => setFormData({...formData, service: val})}>
-                    <SelectTrigger className="rounded-xl">
+                    <SelectTrigger className="h-14 rounded-xl border border-input/40 bg-muted/20 px-5 text-base">
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent side="bottom" sideOffset={8} align="start" className="min-w-[320px] rounded-2xl border border-primary/15 bg-white p-2 shadow-xl ring-0">
                       <SelectItem value="Consultation déco">Consultation à domicile</SelectItem>
                       <SelectItem value="Aménagement complet">Aménagement complet</SelectItem>
                       <SelectItem value="Conseil couleurs">Conseil couleurs & matières</SelectItem>
@@ -351,14 +416,14 @@ export default function Services() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="projectType">Type de projet</Label>
                   <Select onValueChange={(val: string) => setFormData({...formData, projectType: val})}>
-                    <SelectTrigger className="rounded-xl">
+                    <SelectTrigger className="h-14 rounded-xl border border-input/40 bg-muted/20 px-5 text-base">
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent side="bottom" sideOffset={8} align="start" className="min-w-[320px] rounded-2xl border border-primary/15 bg-white p-2 shadow-xl ring-0">
                       <SelectItem value="Résidentiel">Résidentiel</SelectItem>
                       <SelectItem value="Commercial">Commercial</SelectItem>
                       <SelectItem value="Hôtellerie">Hôtellerie</SelectItem>
@@ -370,10 +435,10 @@ export default function Services() {
                 <div className="space-y-2">
                   <Label htmlFor="interventionType">Mode d'intervention</Label>
                   <Select onValueChange={(val: string) => setFormData({...formData, interventionType: val})}>
-                    <SelectTrigger className="rounded-xl">
+                    <SelectTrigger className="h-14 rounded-xl border border-input/40 bg-muted/20 px-5 text-base">
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent side="bottom" sideOffset={8} align="start" className="min-w-[320px] rounded-2xl border border-primary/15 bg-white p-2 shadow-xl ring-0">
                       <SelectItem value="À domicile">À domicile</SelectItem>
                       <SelectItem value="À distance">À distance</SelectItem>
                       <SelectItem value="Hybride">Hybride</SelectItem>
@@ -381,50 +446,61 @@ export default function Services() {
                   </Select>
                 </div>
               </div>
+              </>
+              )}
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
+              {currentStep === 3 && (
+              <>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-12 md:gap-8">
+                <div className="space-y-2 md:col-span-4">
                   <Label htmlFor="preferredDate">Date souhaitée</Label>
                   <Input id="preferredDate" type="date" className="rounded-xl" value={formData.preferredDate} onChange={e => setFormData({...formData, preferredDate: e.target.value})} />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="preferredTimeSlot">Créneau</Label>
-                  <Select onValueChange={(val: string) => setFormData({...formData, preferredTimeSlot: val})}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue placeholder="Sélectionner" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Matin (09h-12h)">Matin (09h-12h)</SelectItem>
-                      <SelectItem value="Après-midi (14h-18h)">Après-midi (14h-18h)</SelectItem>
-                      <SelectItem value="Soirée (18h-20h)">Soirée (18h-20h)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="estimatedDurationHours">Durée estimée (h)</Label>
-                  <Input id="estimatedDurationHours" type="number" min={1} className="rounded-xl" value={formData.estimatedDurationHours} onChange={e => setFormData({...formData, estimatedDurationHours: e.target.value})} />
+                <div className="space-y-6 md:col-span-8">
+                  <div className="space-y-2">
+                    <Label htmlFor="preferredTimeSlot">Créneau</Label>
+                    <Select onValueChange={(val: string) => setFormData({...formData, preferredTimeSlot: val})}>
+                      <SelectTrigger className="h-14 rounded-xl border border-input/40 bg-muted/20 px-5 text-base">
+                        <SelectValue placeholder="Sélectionner" />
+                      </SelectTrigger>
+                      <SelectContent side="bottom" sideOffset={8} align="start" className="min-w-[320px] rounded-2xl border border-primary/15 bg-white p-2 shadow-xl ring-0">
+                        <SelectItem value="Matin (09h-12h)">Matin (09h-12h)</SelectItem>
+                        <SelectItem value="Après-midi (14h-18h)">Après-midi (14h-18h)</SelectItem>
+                        <SelectItem value="Soirée (18h-20h)">Soirée (18h-20h)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="estimatedDurationHours">Durée estimée (h)</Label>
+                    <Input id="estimatedDurationHours" type="number" min={1} className="rounded-xl" value={formData.estimatedDurationHours} onChange={e => setFormData({...formData, estimatedDurationHours: e.target.value})} />
+                  </div>
                 </div>
               </div>
+              </>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="neighborhood">Quartier / Commune (Abidjan)</Label>
-                <Input id="neighborhood" placeholder="ex: Cocody Riviera 3" className="rounded-xl" value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value})} />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {currentStep === 4 && (
+              <>
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="neighborhood">Quartier / Commune (Abidjan)</Label>
+                  <Input id="neighborhood" placeholder="ex: Cocody Riviera 3" className="rounded-xl" value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value})} />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="city">Ville</Label>
                   <Input id="city" placeholder="Abidjan" className="rounded-xl" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="rooms">Pièces concernées (virgules)</Label>
+                  <Input id="rooms" placeholder="ex: Salon, Chambre parentale" className="rounded-xl" value={formData.rooms} onChange={e => setFormData({...formData, rooms: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="estimatedCost">Coût estimatif (FCFA)</Label>
                   <Input id="estimatedCost" type="number" min={1} placeholder="ex: 180000" className="rounded-xl" value={formData.estimatedCost} onChange={e => setFormData({...formData, estimatedCost: e.target.value})} />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="rooms">Pièces concernées (virgules)</Label>
-                <Input id="rooms" placeholder="ex: Salon, Chambre parentale" className="rounded-xl" value={formData.rooms} onChange={e => setFormData({...formData, rooms: e.target.value})} />
               </div>
 
               <div className="space-y-2">
@@ -449,6 +525,8 @@ export default function Services() {
                 <Label htmlFor="notes">Notes complémentaires</Label>
                 <Textarea id="notes" placeholder="Contraintes de planning, priorités, préférences..." className="min-h-[100px] rounded-xl" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
               </div>
+              </>
+              )}
 
               {formError && (
                 <p className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">
@@ -456,9 +534,20 @@ export default function Services() {
                 </p>
               )}
 
-              <Button type="submit" className="w-full h-14 rounded-full text-lg font-bold">
-                Réserver ma consultation
-              </Button>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                <Button type="button" variant="outline" className="h-12 rounded-full" onClick={goToPreviousStep} disabled={currentStep === 1}>
+                  Précédent
+                </Button>
+                {currentStep < totalSteps ? (
+                  <Button type="button" className="h-12 rounded-full px-8" onClick={goToNextStep}>
+                    Suivant
+                  </Button>
+                ) : (
+                  <Button type="submit" className="h-12 rounded-full px-8 text-base font-bold">
+                    Réserver ma consultation
+                  </Button>
+                )}
+              </div>
             </form>
           </div>
         </div>

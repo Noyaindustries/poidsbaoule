@@ -37,7 +37,7 @@ export function ReservationProvider({ children }: { children: React.ReactNode })
 
   const addReservation = async (resData: Omit<Reservation, 'id' | 'status' | 'createdAt'>) => {
     const id = `RES-${Date.now().toString().slice(-4)}`;
-    const status = 'Demande reçue';
+    const status = 'Nouveau';
     const createdAt = new Date().toISOString();
 
     const doc: Reservation = {
@@ -92,6 +92,7 @@ export function ReservationProvider({ children }: { children: React.ReactNode })
       setReservations((prev) => prev.map((res) => (res.id === id ? { ...res, status } : res)));
     } catch (e) {
       console.error('Failed to update reservation status in DB:', e);
+      throw e;
     }
   };
 

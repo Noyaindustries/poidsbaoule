@@ -41,6 +41,39 @@ const CUSTOM_ORDER_STATUS_OPTIONS = [
   'Annulé',
 ] as const;
 
+const RESERVATION_STATUS_OPTIONS = [
+  'Nouveau',
+  'Qualification',
+  'Visite planifiée',
+  'Proposition envoyée',
+  'En cours',
+  'Terminée',
+  'Annulée',
+] as const;
+
+const LEGACY_RESERVATION_STATUS_MAP: Record<string, (typeof RESERVATION_STATUS_OPTIONS)[number]> = {
+  'Demande reçue': 'Nouveau',
+  'Confirmée': 'Visite planifiée',
+};
+
+function normalizeReservationStatus(status: string): (typeof RESERVATION_STATUS_OPTIONS)[number] {
+  if ((RESERVATION_STATUS_OPTIONS as readonly string[]).includes(status)) {
+    return status as (typeof RESERVATION_STATUS_OPTIONS)[number];
+  }
+  return LEGACY_RESERVATION_STATUS_MAP[status] ?? 'Nouveau';
+}
+
+function reservationStatusBadgeClass(status: string): string {
+  const normalized = normalizeReservationStatus(status);
+  if (normalized === 'Annulée') return 'bg-red-100 text-red-700';
+  if (normalized === 'Terminée') return 'bg-emerald-100 text-emerald-700';
+  if (normalized === 'En cours') return 'bg-orange-100 text-orange-700';
+  if (normalized === 'Proposition envoyée') return 'bg-violet-100 text-violet-700';
+  if (normalized === 'Visite planifiée') return 'bg-blue-100 text-blue-700';
+  if (normalized === 'Qualification') return 'bg-indigo-100 text-indigo-700';
+  return 'bg-slate-100 text-slate-700';
+}
+
 const LEGACY_CUSTOM_STATUS_MAP: Record<string, (typeof CUSTOM_ORDER_STATUS_OPTIONS)[number]> = {
   'Étude': 'Étude & devis',
   'Fabrication': 'En fabrication',
@@ -117,10 +150,9 @@ export default function ReservationManager() {
                     <CardHeader className="p-8 pb-4">
                       <div className="flex justify-between items-start">
                         <Badge className={`rounded-full px-3 py-1 text-[10px] uppercase font-bold border-none ${
-                          res.status === 'Confirmée' ? 'bg-green-100 text-green-700' : 
-                          res.status === 'Annulée' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                          reservationStatusBadgeClass(res.status)
                         }`}>
-                          {res.status}
+                          {normalizeReservationStatus(res.status)}
                         </Badge>
                         <DropdownMenu>
                           <DropdownMenuTrigger 
@@ -241,7 +273,7 @@ export default function ReservationManager() {
 function ReservationDetail({ res }: { res: Reservation }) {
   const { updateReservationStatus } = useReservations();
   const [statusSelectOpen, setStatusSelectOpen] = useState(false);
-  const [statusValue, setStatusValue] = useState(res.status);
+  const [statusValue, setStatusValue] = useState(normalizeReservationStatus(res.status));
   
   const handleContact = (method: 'whatsapp' | 'email') => {
     const message = `Bonjour ${res.customerName}, je reviens vers vous concernant votre demande de ${res.type} chez Poids Baoulé Home Design...`;
@@ -299,10 +331,11 @@ function ReservationDetail({ res }: { res: Reservation }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-none shadow-xl">
-                  <SelectItem value="Demande reçue">Demande reçue</SelectItem>
-                  <SelectItem value="Confirmée">Confirmée</SelectItem>
-                  <SelectItem value="Terminée">Terminée</SelectItem>
-                  <SelectItem value="Annulée">Annulée</SelectItem>
+                  {RESERVATION_STATUS_OPTIONS.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
           </div>
@@ -402,10 +435,10 @@ function CustomOrderDetail({ order }: { order: CustomOrder }) {
                   }
                 }}
               >
-                <SelectTrigger className="w-[180px] h-11 rounded-xl bg-muted/30 border-none text-right">
+                <SelectTrigger className="w-[260px] h-12 rounded-xl bg-muted/30 border-none text-right">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border-none shadow-xl">
+                <SelectContent className="min-w-[260px] rounded-xl border-none shadow-xl">
                   {CUSTOM_ORDER_STATUS_OPTIONS.map((status) => (
                     <SelectItem key={status} value={status}>
                       {status}
@@ -431,9 +464,17 @@ function CustomOrderDetail({ order }: { order: CustomOrder }) {
 
         <section className="space-y-6">
           <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Client</h3>
-          <div className="flex items-center gap-4">
-            <Mail className="h-5 w-5 text-muted-foreground" />
-            <p className="font-bold">{order.email}</p>
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <Mail className="h-5 w-5 text-muted-foreground" />
+              <p className="font-bold">{order.email}</p>
+            </div>
+            {order.phone && (
+              <div className="flex items-center gap-4">
+                <Phone className="h-5 w-5 text-muted-foreground" />
+                <p className="font-bold">{order.phone}</p>
+              </div>
+            )}
           </div>
         </section>
 

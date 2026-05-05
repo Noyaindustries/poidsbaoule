@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Send, Upload, Info, CheckCircle2, Clock, Palette, Ruler } from 'lucide-react';
+import { Send, Upload, Info, CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,6 +24,7 @@ type UploadedMoodboardFile = {
 };
 
 export default function CustomOrder() {
+  const navigate = useNavigate();
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [formError, setFormError] = useState('');
   const [uploadError, setUploadError] = useState('');
@@ -34,6 +36,7 @@ export default function CustomOrder() {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    phone: '',
     type: '',
     deadline: '',
     description: '',
@@ -109,6 +112,7 @@ export default function CustomOrder() {
       await addCustomOrder({
         customerName: formData.name.trim(),
         email: formData.email.trim(),
+        phone: formData.phone.trim() || undefined,
         description: formData.description.trim(),
         dimensions: `${width} x ${height}${formData.depthCm ? ` x ${depth}` : ''} cm`,
         finish: formData.finish.trim(),
@@ -158,6 +162,7 @@ export default function CustomOrder() {
       toast.success("Demande envoyée !", {
         description: "Nous vous recontacterons sous 48h avec un devis personnalisé.",
       });
+      navigate('/admin', { state: { tab: 'reservations' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Impossible d'envoyer la demande pour le moment.";
       if (uploadingStep || isUploading) {
@@ -303,16 +308,25 @@ export default function CustomOrder() {
           <div className="lg:col-span-8">
             <form
               onSubmit={handleSubmit}
-              className="space-y-8 rounded-3xl border-none bg-white/80 p-6 shadow-2xl backdrop-blur-md sm:space-y-12 sm:rounded-[60px] sm:p-10 md:p-16 lg:p-20"
+              className="space-y-8 rounded-3xl bg-white/90 p-6 shadow-2xl backdrop-blur-md sm:space-y-10 sm:rounded-[48px] sm:p-10 md:p-12 lg:p-14"
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-primary">Formulaire Sur Mesure</p>
+                <h3 className="font-serif text-3xl font-bold leading-tight sm:text-4xl">Parlons de votre projet</h3>
+                <p className="text-sm text-muted-foreground">Informations essentielles pour établir votre devis personnalisé.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-10 md:grid-cols-3">
                 <div className="space-y-3">
-                  <Label htmlFor="name" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Nom complet</Label>
-                  <Input id="name" placeholder="Votre nom" required className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                  <Label htmlFor="name" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-2">Nom complet</Label>
+                  <Input id="name" placeholder="Votre nom" required className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
                 </div>
                 <div className="space-y-3">
-                  <Label htmlFor="email" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Email</Label>
-                  <Input id="email" type="email" placeholder="votre@email.com" required className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                  <Label htmlFor="email" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-2">Email</Label>
+                  <Input id="email" type="email" placeholder="votre@email.com" required className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                </div>
+                <div className="space-y-3">
+                  <Label htmlFor="phone" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-2">Contact</Label>
+                  <Input id="phone" type="tel" placeholder="+225 07 00 00 00 00" className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
                 </div>
               </div>
 
@@ -320,10 +334,10 @@ export default function CustomOrder() {
                 <div className="space-y-3">
                   <Label htmlFor="type" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Type de pièce</Label>
                   <Select onValueChange={(val: string) => setFormData({...formData, type: val})}>
-                    <SelectTrigger className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all">
+                    <SelectTrigger className="h-14 rounded-xl border border-input/40 px-5 text-base bg-muted/20 focus:bg-white transition-all">
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-2xl">
+                    <SelectContent side="bottom" sideOffset={8} align="start" className="min-w-[320px] rounded-2xl border border-primary/15 bg-white p-2 shadow-xl ring-0">
                       <SelectItem value="Masque">Masque</SelectItem>
                       <SelectItem value="Miroir">Miroir</SelectItem>
                       <SelectItem value="Meuble Niche">Meuble Niche</SelectItem>
@@ -335,10 +349,10 @@ export default function CustomOrder() {
                 <div className="space-y-3">
                   <Label htmlFor="deadline" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Délai souhaité</Label>
                   <Select onValueChange={(val: string) => setFormData({...formData, deadline: val})}>
-                    <SelectTrigger className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all">
+                    <SelectTrigger className="h-14 rounded-xl border border-input/40 px-5 text-base bg-muted/20 focus:bg-white transition-all">
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-2xl">
+                    <SelectContent side="bottom" sideOffset={8} align="start" className="min-w-[320px] rounded-2xl border border-primary/15 bg-white p-2 shadow-xl ring-0">
                       <SelectItem value="urgent">Moins de 2 semaines</SelectItem>
                       <SelectItem value="normal">2 à 4 semaines</SelectItem>
                       <SelectItem value="flexible">Flexible</SelectItem>
@@ -350,15 +364,15 @@ export default function CustomOrder() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-3">
                   <Label htmlFor="quantity" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Quantité</Label>
-                  <Input id="quantity" type="number" min={1} className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} />
+                  <Input id="quantity" type="number" min={1} className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} />
                 </div>
                 <div className="space-y-3">
                   <Label htmlFor="usageContext" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Usage</Label>
                   <Select onValueChange={(val: string) => setFormData({...formData, usageContext: val})}>
-                    <SelectTrigger className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all">
+                    <SelectTrigger className="h-14 rounded-xl border border-input/40 px-5 text-base bg-muted/20 focus:bg-white transition-all">
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-2xl">
+                    <SelectContent side="bottom" sideOffset={8} align="start" className="min-w-[320px] rounded-2xl border border-primary/15 bg-white p-2 shadow-xl ring-0">
                       <SelectItem value="Intérieur">Intérieur</SelectItem>
                       <SelectItem value="Extérieur">Extérieur</SelectItem>
                       <SelectItem value="Mixte">Mixte</SelectItem>
@@ -368,10 +382,10 @@ export default function CustomOrder() {
                 <div className="space-y-3">
                   <Label htmlFor="budgetRange" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Fourchette budget</Label>
                   <Select onValueChange={(val: string) => setFormData({...formData, budgetRange: val})}>
-                    <SelectTrigger className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all">
+                    <SelectTrigger className="h-14 rounded-xl border border-input/40 px-5 text-base bg-muted/20 focus:bg-white transition-all">
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-2xl">
+                    <SelectContent side="bottom" sideOffset={8} align="start" className="min-w-[320px] rounded-2xl border border-primary/15 bg-white p-2 shadow-xl ring-0">
                       <SelectItem value="Moins de 100 000 FCFA">Moins de 100 000 FCFA</SelectItem>
                       <SelectItem value="100 000 - 300 000 FCFA">100 000 - 300 000 FCFA</SelectItem>
                       <SelectItem value="300 000 - 600 000 FCFA">300 000 - 600 000 FCFA</SelectItem>
@@ -386,7 +400,7 @@ export default function CustomOrder() {
                 <Textarea 
                   id="description" 
                   placeholder="Décrivez votre idée, le style recherché, l'emplacement prévu..." 
-                  className="min-h-[200px] rounded-[40px] p-8 bg-muted/20 border-none focus:bg-white transition-all"
+                  className="min-h-[200px] rounded-[40px] border border-input/40 p-8 bg-muted/20 focus:bg-white transition-all"
                   required
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
@@ -396,41 +410,35 @@ export default function CustomOrder() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
                 <div className="space-y-3">
                   <Label htmlFor="widthCm" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Largeur (cm)</Label>
-                  <div className="relative">
-                    <Ruler className="absolute left-6 top-6 h-5 w-5 text-primary/40" />
-                    <Input id="widthCm" type="number" min={1} placeholder="ex: 120" className="h-16 rounded-full pl-16 pr-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.widthCm} onChange={e => setFormData({...formData, widthCm: e.target.value})} />
-                  </div>
+                  <Input id="widthCm" type="number" min={1} placeholder="ex: 120" className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.widthCm} onChange={e => setFormData({...formData, widthCm: e.target.value})} />
                 </div>
                 <div className="space-y-3">
                   <Label htmlFor="heightCm" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Hauteur (cm)</Label>
-                  <div className="relative">
-                    <Palette className="absolute left-6 top-6 h-5 w-5 text-primary/40" />
-                    <Input id="heightCm" type="number" min={1} placeholder="ex: 80" className="h-16 rounded-full pl-16 pr-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.heightCm} onChange={e => setFormData({...formData, heightCm: e.target.value})} />
-                  </div>
+                  <Input id="heightCm" type="number" min={1} placeholder="ex: 80" className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.heightCm} onChange={e => setFormData({...formData, heightCm: e.target.value})} />
                 </div>
                 <div className="space-y-3">
                   <Label htmlFor="depthCm" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Profondeur (cm, optionnel)</Label>
-                  <Input id="depthCm" type="number" min={1} placeholder="ex: 15" className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.depthCm} onChange={e => setFormData({...formData, depthCm: e.target.value})} />
+                  <Input id="depthCm" type="number" min={1} placeholder="ex: 15" className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.depthCm} onChange={e => setFormData({...formData, depthCm: e.target.value})} />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <div className="space-y-3">
                   <Label htmlFor="finish" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Finitions (séparées par virgules)</Label>
-                  <Input id="finish" placeholder="ex: Ciment blanc, Mat, Texturé" className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.finish} onChange={e => setFormData({...formData, finish: e.target.value})} />
+                  <Input id="finish" placeholder="ex: Ciment blanc, Mat, Texturé" className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.finish} onChange={e => setFormData({...formData, finish: e.target.value})} />
                 </div>
                 <div className="space-y-3">
                   <Label htmlFor="desiredColors" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Palette couleurs (virgules)</Label>
-                  <Input id="desiredColors" placeholder="ex: Ivoire, Terracotta, Noir" className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.desiredColors} onChange={e => setFormData({...formData, desiredColors: e.target.value})} />
+                  <Input id="desiredColors" placeholder="ex: Ivoire, Terracotta, Noir" className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.desiredColors} onChange={e => setFormData({...formData, desiredColors: e.target.value})} />
                 </div>
               </div>
 
               <div className="space-y-3">
                 <Label htmlFor="constraints" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Contraintes techniques (une ligne par contrainte)</Label>
-                <Textarea id="constraints" placeholder="Ex: Accrochage mural obligatoire&#10;Passage de porte 85 cm max" className="min-h-[120px] rounded-[30px] p-6 bg-muted/20 border-none focus:bg-white transition-all" value={formData.constraints} onChange={e => setFormData({...formData, constraints: e.target.value})} />
+                <Textarea id="constraints" placeholder="Ex: Accrochage mural obligatoire&#10;Passage de porte 85 cm max" className="min-h-[120px] rounded-[30px] border border-input/40 p-6 bg-muted/20 focus:bg-white transition-all" value={formData.constraints} onChange={e => setFormData({...formData, constraints: e.target.value})} />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 rounded-[30px] border border-primary/10 p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="flex items-center gap-3 text-sm">
                   <input type="checkbox" checked={formData.includeDelivery} onChange={e => setFormData({...formData, includeDelivery: e.target.checked})} />
                   Inclure la livraison
@@ -448,11 +456,11 @@ export default function CustomOrder() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <div className="space-y-3">
                   <Label htmlFor="estimatedBudget" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Budget estimatif (FCFA)</Label>
-                  <Input id="estimatedBudget" type="number" min={1} placeholder="ex: 250000" className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.estimatedBudget} onChange={e => setFormData({...formData, estimatedBudget: e.target.value})} />
+                  <Input id="estimatedBudget" type="number" min={1} placeholder="ex: 250000" className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.estimatedBudget} onChange={e => setFormData({...formData, estimatedBudget: e.target.value})} />
                 </div>
                 <div className="space-y-3">
                   <Label htmlFor="notes" className="text-[10px] uppercase tracking-[0.2em] font-bold ml-4">Notes complémentaires</Label>
-                  <Input id="notes" placeholder="Accès chantier, contraintes horaires..." className="h-16 rounded-full px-8 bg-muted/20 border-none focus:bg-white transition-all" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                  <Input id="notes" placeholder="Accès chantier, contraintes horaires..." className="h-12 rounded-xl px-4 bg-muted/20 border border-input/40 focus:bg-white transition-all" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
                 </div>
               </div>
 

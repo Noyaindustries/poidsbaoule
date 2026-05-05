@@ -68,7 +68,17 @@ export interface Reservation {
     estimatedCost: number;
     notes?: string;
   };
-  status: 'Demande reçue' | 'Confirmée' | 'En cours' | 'Terminée' | 'Annulée';
+  status:
+    | 'Nouveau'
+    | 'Qualification'
+    | 'Visite planifiée'
+    | 'Proposition envoyée'
+    | 'En cours'
+    | 'Terminée'
+    | 'Annulée'
+    // Compatibilité données existantes
+    | 'Demande reçue'
+    | 'Confirmée';
   createdAt: string;
 }
 
@@ -76,6 +86,7 @@ export interface CustomOrder {
   id: string;
   customerName: string;
   email: string;
+  phone?: string;
   description: string;
   dimensions: string;
   finish: string;

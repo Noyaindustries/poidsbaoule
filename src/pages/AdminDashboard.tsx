@@ -18,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useUsers } from '@/lib/UserContext';
@@ -94,6 +94,7 @@ function readTableDensity(): 'compact' | 'comfortable' {
 }
 
 export default function AdminDashboard() {
+  const location = useLocation();
   const navigate = useNavigate();
   const { currentUser, logout } = useUsers();
   const { branding } = useBranding();
@@ -150,6 +151,27 @@ export default function AdminDashboard() {
       window.removeEventListener('storage', syncDensity);
     };
   }, []);
+
+  useEffect(() => {
+    const requestedTab = (location.state as { tab?: string } | null)?.tab;
+    if (!requestedTab) return;
+    const allowedTabs = new Set([
+      'dashboard',
+      'products',
+      'categories',
+      'orders',
+      'clients',
+      'reservations',
+      'invoices',
+      'promos',
+      'testimonials',
+      'settings',
+    ]);
+    if (allowedTabs.has(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   const menuItems = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: <LayoutDashboard className="h-4 w-4" /> },

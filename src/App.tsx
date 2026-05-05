@@ -1,5 +1,5 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { ShoppingCart, User, Menu, Search, ChevronDown, MessageCircle, Phone, Mail, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -74,10 +74,13 @@ const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { totalItems } = useCart();
   const { resolvedHomeLogo } = useBranding();
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isServicesMenuOpen, setIsServicesMenuOpen] = useState(false);
+  const servicesMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 50);
@@ -116,7 +119,22 @@ const Navbar = () => {
       window.scrollTo(0, 0);
     }
     setIsMobileMenuOpen(false);
+    setIsServicesMenuOpen(false);
   };
+
+  useEffect(() => {
+    setIsServicesMenuOpen(false);
+  }, [location.pathname, location.hash]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!servicesMenuRef.current) return;
+      if (servicesMenuRef.current.contains(event.target as Node)) return;
+      setIsServicesMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, []);
 
   const baseNavLink = 'shrink-0 text-sm font-medium uppercase tracking-widest transition-colors hover:text-primary';
 
@@ -217,42 +235,49 @@ const Navbar = () => {
             Boutique
           </Link>
 
-          <div className="group/nav relative z-50">
+          <div
+            ref={servicesMenuRef}
+            className="relative z-50"
+            onMouseEnter={() => setIsServicesMenuOpen(true)}
+            onMouseLeave={() => setIsServicesMenuOpen(false)}
+          >
             <button
               type="button"
-              className={cn(servicesTriggerClass, 'cursor-default')}
-              aria-haspopup="true"
-              aria-expanded={false}
+              className={cn(servicesTriggerClass)}
+              aria-haspopup="menu"
+              onClick={() => setIsServicesMenuOpen((prev) => !prev)}
             >
               Services
-              <ChevronDown className="h-3.5 w-3.5 opacity-70 transition-transform duration-200 group-hover/nav:-rotate-180" aria-hidden />
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 opacity-70 transition-transform duration-200',
+                  isServicesMenuOpen && 'rotate-180'
+                )}
+                aria-hidden
+              />
             </button>
-            <div
-              className={cn(
-                'pointer-events-none invisible absolute left-1/2 top-full z-50 mt-0 w-[min(19rem,calc(100vw-2rem))] -translate-x-1/2 pt-2 opacity-0 transition-[opacity,visibility,transform] duration-200 ease-out motion-reduce:transition-none',
-                'translate-y-1',
-                'group-hover/nav:pointer-events-auto group-hover/nav:visible group-hover/nav:translate-y-0 group-hover/nav:opacity-100',
-                'group-focus-within/nav:pointer-events-auto group-focus-within/nav:visible group-focus-within/nav:translate-y-0 group-focus-within/nav:opacity-100'
-              )}
-            >
-              <div className="rounded-xl border border-border/80 bg-popover/95 p-2 shadow-xl backdrop-blur-md supports-[backdrop-filter]:bg-popover/90">
+            {isServicesMenuOpen && (
+              <div className="absolute left-1/2 top-full z-50 mt-0 w-[min(19rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-border/80 bg-popover/95 p-2 shadow-xl backdrop-blur-md supports-[backdrop-filter]:bg-popover/90">
                 <p className="px-2 pb-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Nos services</p>
-                <ul className="space-y-0.5">
+                <div className="space-y-0.5">
                   {DESKTOP_SERVICE_LINKS.map((item) => (
-                    <li key={item.path}>
-                      <Link
-                        to={item.path}
-                        onClick={() => window.scrollTo(0, 0)}
-                        className="block rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-primary/10 focus-visible:bg-primary/10 focus-visible:outline-none"
-                      >
-                        <span className="block text-sm font-semibold text-foreground">{item.name}</span>
-                        <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{item.description}</span>
-                      </Link>
-                    </li>
+                    <button
+                      key={item.path}
+                      type="button"
+                      onClick={() => {
+                        setIsServicesMenuOpen(false);
+                        window.scrollTo(0, 0);
+                        navigate(item.path);
+                      }}
+                      className="block w-full cursor-pointer rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-primary/10 focus:bg-primary/10 focus:outline-none"
+                    >
+                      <span className="block text-sm font-semibold text-foreground">{item.name}</span>
+                      <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{item.description}</span>
+                    </button>
                   ))}
-                </ul>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {DESKTOP_TAIL_LINKS.map((link) => (
