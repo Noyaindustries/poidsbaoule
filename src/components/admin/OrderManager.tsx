@@ -220,7 +220,7 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
   };
 
   return (
-    <DialogContent className="w-[min(96vw,960px)] max-w-[960px] max-h-[90vh] overflow-x-hidden overflow-y-auto rounded-[32px] border-none p-0 font-sans shadow-2xl">
+    <DialogContent className="w-[96vw] max-w-[1400px] max-h-[90vh] overflow-x-hidden overflow-y-auto rounded-[32px] border-none p-0 font-sans shadow-2xl">
       <DialogHeader className="p-8 pb-4">
         <div className="flex items-center justify-between gap-4 mb-2">
           <Badge className="bg-primary/10 text-primary border-none text-[10px] uppercase tracking-widest font-bold">Commande active</Badge>
