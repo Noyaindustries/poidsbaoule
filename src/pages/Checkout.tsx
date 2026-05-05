@@ -229,6 +229,7 @@ export default function Checkout() {
         return;
       }
       if (paymentStrategy === 'CASH') {
+        toast.success("Commande confirmée. Contactez le service client pour la confirmation du paiement de 50%.");
         const msg = [
           'Bonjour équipe Poids Baoulé,',
           '',
@@ -237,6 +238,7 @@ export default function Checkout() {
           `Téléphone : ${formData.phone}.`,
           '',
           "Merci de me confirmer la date de livraison.",
+          "Je dois contacter le service client pour la confirmation du paiement de 50%.",
         ].join('\n');
         window.location.href = buildWhatsAppPhonePrefillUrl(WHATSAPP_STORE_PHONE_E164, msg);
         return;
