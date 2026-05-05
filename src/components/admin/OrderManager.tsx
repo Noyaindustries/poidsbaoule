@@ -16,9 +16,8 @@ import {
   DropdownMenuTrigger, DropdownMenuSeparator 
 } from '@/components/ui/dropdown-menu';
 import { 
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
-  SheetDescription, SheetFooter
-} from '@/components/ui/sheet';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter
+} from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
@@ -147,8 +146,8 @@ export default function OrderManager() {
                       </td>
                       <td className="px-8 py-6">{getStatusBadge(order.status)}</td>
                       <td className="px-8 py-6 text-right">
-                        <Sheet>
-                          <SheetTrigger 
+                        <Dialog>
+                          <DialogTrigger 
                             render={
                               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100" onClick={() => setSelectedOrder(order)}>
                                 <Eye className="h-4 w-4" />
@@ -156,7 +155,7 @@ export default function OrderManager() {
                             }
                           />
                           <OrderDetails order={selectedOrder} />
-                        </Sheet>
+                        </Dialog>
                       </td>
                     </tr>
                   ))
@@ -221,17 +220,17 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
   };
 
   return (
-    <SheetContent className="sm:max-w-2xl w-full overflow-y-auto rounded-l-[40px] border-none shadow-2xl p-0 font-sans">
-      <SheetHeader className="p-8 pb-4">
+    <DialogContent className="h-[100dvh] w-[100vw] max-w-none overflow-y-auto rounded-none border-none p-0 font-sans shadow-2xl sm:h-auto sm:max-h-[90vh] sm:w-[min(96vw,860px)] sm:max-w-[860px] sm:rounded-[32px]">
+      <DialogHeader className="p-8 pb-4">
         <div className="flex items-center justify-between gap-4 mb-2">
           <Badge className="bg-primary/10 text-primary border-none text-[10px] uppercase tracking-widest font-bold">Commande active</Badge>
           <p className="text-xs text-muted-foreground">{new Date(order.createdAt).toLocaleString()}</p>
         </div>
-        <SheetTitle className="text-3xl font-serif font-bold flex items-center gap-3">
+        <DialogTitle className="text-3xl font-serif font-bold flex items-center gap-3">
           {order.id}
           <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => window.open(`/checkout/success/${order.id}`, '_blank')}><ExternalLink className="h-4 w-4" /></Button>
-        </SheetTitle>
-      </SheetHeader>
+        </DialogTitle>
+      </DialogHeader>
 
       <div className="p-8 pt-4 pb-32 space-y-12">
         {/* Customer & Status Section */}
@@ -507,15 +506,15 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
           />
         </section>
 
-        <SheetFooter className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md p-8 border-t flex gap-4">
+        <DialogFooter className="sticky bottom-0 mt-6 bg-white/90 backdrop-blur-md p-6 border-t flex gap-4">
           <Button variant="outline" className="flex-1 rounded-full h-14" onClick={() => generateInvoicePDF(order.id)}>
             <FileText className="mr-2 h-4 w-4" /> Facture PDF
           </Button>
           <Button className="flex-[2] rounded-full h-14 text-lg font-bold" onClick={() => handleWhatsApp('shipping')}>
             <Truck className="mr-2 h-5 w-5" /> Prévenir Livraison
           </Button>
-        </SheetFooter>
+        </DialogFooter>
       </div>
-    </SheetContent>
+    </DialogContent>
   );
 }
