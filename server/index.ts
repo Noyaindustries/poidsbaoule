@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { getDb } from './db';
@@ -15,9 +16,29 @@ export const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-const uploadDir = path.join(process.cwd(), 'uploads', 'custom-orders');
-fs.mkdirSync(uploadDir, { recursive: true });
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+const { uploadDir, uploadsRoot } = (() => {
+  // Netlify Functions (lambda) tournent souvent dans un filesystem non-écrivable (ex: /var/task).
+  // On tente d'abord le chemin local "uploads/", sinon on bascule sur os.tmpdir().
+  const localUploadsRoot = path.join(process.cwd(), 'uploads');
+  const localCustomOrdersDir = path.join(localUploadsRoot, 'custom-orders');
+  try {
+    fs.mkdirSync(localCustomOrdersDir, { recursive: true });
+    return { uploadDir: localCustomOrdersDir, uploadsRoot: localUploadsRoot };
+  } catch (e) {
+    const tmpUploadsRoot = path.join(os.tmpdir(), 'uploads');
+    const tmpCustomOrdersDir = path.join(tmpUploadsRoot, 'custom-orders');
+    try {
+      fs.mkdirSync(tmpCustomOrdersDir, { recursive: true });
+      return { uploadDir: tmpCustomOrdersDir, uploadsRoot: tmpUploadsRoot };
+    } catch {
+      // Dernier recours: on garde un chemin mais sans garantir que l'upload pourra écrire.
+      // Cela évite de faire planter toute la fonction au démarrage.
+      return { uploadDir: localCustomOrdersDir, uploadsRoot: localUploadsRoot };
+    }
+  }
+})();
+
+app.use('/uploads', express.static(uploadsRoot));
 
 const allowedUploadMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const maxUploadBytes = 5 * 1024 * 1024;
