@@ -50,6 +50,11 @@ export default function OrderManager() {
     }
   };
 
+  const hasHalfDeposit = (order: Order) =>
+    order.paymentStrategy === '50-50' && order.amountPaid > 0 && order.balanceDue > 0;
+  const isHalfDepositPendingValidation = (order: Order) =>
+    order.paymentStrategy === '50-50' && order.amountPaid === 0 && order.balanceDue > 0;
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -92,6 +97,16 @@ export default function OrderManager() {
                     <tr key={order.id} className="hover:bg-muted/20 transition-colors group">
                       <td className="px-8 py-6">
                         <div className="font-bold">{order.id}</div>
+                        {isHalfDepositPendingValidation(order) && (
+                          <Badge variant="outline" className="mt-1 border-violet-200 bg-violet-50 text-[9px] text-violet-700">
+                            Acompte en attente de validation
+                          </Badge>
+                        )}
+                        {hasHalfDeposit(order) && (
+                          <Badge variant="outline" className="mt-1 border-blue-200 bg-blue-50 text-[9px] text-blue-700">
+                            Acompte 50% reçu
+                          </Badge>
+                        )}
                         {order.balanceDue > 0 && (
                           <Badge variant="outline" className="text-[9px] border-amber-200 text-amber-700 bg-amber-50 mt-1">Reste: {order.balanceDue.toLocaleString()} FCFA</Badge>
                         )}
@@ -143,9 +158,11 @@ export default function OrderManager() {
 }
 
 function OrderDetails({ order: initialOrder }: { order: any }) {
-  const { updateOrderStatus, orders, confirmFinalPayment } = useOrders();
+  const { updateOrderStatus, orders, confirmFinalPayment, validateHalfDeposit } = useOrders();
   
   const order = orders.find(o => o.id === initialOrder?.id) || initialOrder;
+  const hasHalfDeposit = order?.paymentStrategy === '50-50' && order?.amountPaid > 0 && order?.balanceDue > 0;
+  const needsHalfDepositValidation = order?.paymentStrategy === '50-50' && Number(order?.amountPaid ?? 0) === 0;
 
   if (!order) return null;
 
@@ -246,6 +263,16 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
         <section className="rounded-2xl border border-primary/10 bg-muted/20 p-4">
           <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Moyen de paiement</h3>
           <p className="mt-1 text-sm font-bold text-foreground">{order.paymentMethod}</p>
+          {needsHalfDepositValidation && (
+            <Badge variant="outline" className="mt-2 border-violet-200 bg-violet-50 text-violet-700">
+              Acompte en attente de validation
+            </Badge>
+          )}
+          {hasHalfDeposit && (
+            <Badge variant="outline" className="mt-2 border-blue-200 bg-blue-50 text-blue-700">
+              Acompte 50% reçu
+            </Badge>
+          )}
           {order.paymentStrategy && (
             <p className="mt-1 text-xs text-muted-foreground">
               Modalité :{' '}
@@ -289,7 +316,17 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
             </div>
           </div>
 
-          {order.balanceDue > 0 && (
+          {needsHalfDepositValidation ? (
+            <Button
+              className="mt-4 h-11 w-full rounded-xl bg-blue-600 text-xs font-bold text-white shadow-lg shadow-blue-600/20"
+              onClick={async () => {
+                await validateHalfDeposit(order.id);
+                toast.success("Acompte 50% validé !");
+              }}
+            >
+              <CheckCircle2 className="mr-2 h-4 w-4" /> Valider acompte 50%
+            </Button>
+          ) : order.balanceDue > 0 ? (
             <Button 
               className="w-full mt-4 bg-primary text-white rounded-xl h-11 text-xs font-bold shadow-lg shadow-primary/20"
               onClick={async () => {
@@ -299,7 +336,7 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
             >
               <CheckCircle2 className="mr-2 h-4 w-4" /> Confirmer encaissement du solde final
             </Button>
-          )}
+          ) : null}
         </section>
 
         {order.balanceDue > 0 && (

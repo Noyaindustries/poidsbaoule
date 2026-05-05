@@ -348,14 +348,16 @@ function validateOnlineOnlyMobilePayment(order: Record<string, unknown>): string
   const total = Number(order.total);
   const balanceDue = Number(order.balanceDue);
 
-  if (paymentStrategy !== 'FULL') {
-    return 'Le paiement mobile doit être effectué en ligne et en totalité (mode FULL uniquement).';
+  if (paymentStrategy !== 'FULL' && paymentStrategy !== '50-50') {
+    return 'Le paiement mobile autorise uniquement FULL ou 50-50.';
   }
-  if (!Number.isFinite(amountPaid) || !Number.isFinite(total) || amountPaid < total) {
-    return 'Paiement mobile refusé: le montant total doit être encaissé en ligne immédiatement.';
+  const expectedDueNow = computeAmountDueNow(total, paymentMethod, paymentStrategy);
+  if (!Number.isFinite(amountPaid) || !Number.isFinite(total) || amountPaid < expectedDueNow) {
+    return 'Paiement mobile refusé: montant encaissé insuffisant pour la stratégie choisie.';
   }
-  if (!Number.isFinite(balanceDue) || balanceDue !== 0) {
-    return 'Paiement mobile refusé: aucun solde différé n’est autorisé.';
+  const expectedBalance = Math.max(total - expectedDueNow, 0);
+  if (!Number.isFinite(balanceDue) || balanceDue !== expectedBalance) {
+    return 'Paiement mobile refusé: solde différé incohérent.';
   }
   return null;
 }
