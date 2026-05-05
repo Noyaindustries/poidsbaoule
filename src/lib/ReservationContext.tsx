@@ -61,7 +61,7 @@ export function ReservationProvider({ children }: { children: React.ReactNode })
 
   const addCustomOrder = async (orderData: Omit<CustomOrder, 'id' | 'status' | 'createdAt'>) => {
     const id = `CUST-${Date.now().toString().slice(-4)}`;
-    const status = 'Étude';
+    const status = 'Nouveau';
     const createdAt = new Date().toISOString();
 
     const doc: CustomOrder = {
@@ -104,6 +104,7 @@ export function ReservationProvider({ children }: { children: React.ReactNode })
       setCustomOrders((prev) => prev.map((order) => (order.id === id ? { ...order, status } : order)));
     } catch (e) {
       console.error('Failed to update custom order status in DB:', e);
+      throw e;
     }
   };
 

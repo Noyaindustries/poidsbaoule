@@ -30,6 +30,42 @@ import { useReservations } from '@/lib/ReservationContext';
 import { useUsers } from '@/lib/UserContext';
 import { Reservation, CustomOrder } from '@/types';
 
+const CUSTOM_ORDER_STATUS_OPTIONS = [
+  'Nouveau',
+  'Étude & devis',
+  'Validation client',
+  'En fabrication',
+  'Finition',
+  'Prêt à livrer',
+  'Livré',
+  'Annulé',
+] as const;
+
+const LEGACY_CUSTOM_STATUS_MAP: Record<string, (typeof CUSTOM_ORDER_STATUS_OPTIONS)[number]> = {
+  'Étude': 'Étude & devis',
+  'Fabrication': 'En fabrication',
+  'Prêt à livrer': 'Prêt à livrer',
+};
+
+function normalizeCustomOrderStatus(status: string): (typeof CUSTOM_ORDER_STATUS_OPTIONS)[number] {
+  if ((CUSTOM_ORDER_STATUS_OPTIONS as readonly string[]).includes(status)) {
+    return status as (typeof CUSTOM_ORDER_STATUS_OPTIONS)[number];
+  }
+  return LEGACY_CUSTOM_STATUS_MAP[status] ?? 'Nouveau';
+}
+
+function customOrderStatusBadgeClass(status: string): string {
+  const normalized = normalizeCustomOrderStatus(status);
+  if (normalized === 'Annulé') return 'bg-red-100 text-red-700';
+  if (normalized === 'Livré') return 'bg-emerald-100 text-emerald-700';
+  if (normalized === 'Prêt à livrer') return 'bg-green-100 text-green-700';
+  if (normalized === 'Finition') return 'bg-amber-100 text-amber-700';
+  if (normalized === 'Validation client') return 'bg-violet-100 text-violet-700';
+  if (normalized === 'En fabrication') return 'bg-orange-100 text-orange-700';
+  if (normalized === 'Étude & devis') return 'bg-blue-100 text-blue-700';
+  return 'bg-slate-100 text-slate-700';
+}
+
 export default function ReservationManager() {
   const [activeTab, setActiveTab] = useState('services');
   const [searchQuery, setSearchQuery] = useState('');
@@ -168,10 +204,9 @@ export default function ReservationManager() {
                       <td className="px-8 py-6">{order.customerName}</td>
                       <td className="px-8 py-6">
                         <Badge className={`rounded-full px-3 py-1 border-none text-[10px] uppercase font-bold ${
-                          order.status === 'Finition' ? 'bg-amber-100 text-amber-700' : 
-                          order.status === 'Étude' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                          customOrderStatusBadgeClass(order.status)
                         }`}>
-                          {order.status}
+                          {normalizeCustomOrderStatus(order.status)}
                         </Badge>
                       </td>
                       <td className="px-8 py-6 text-muted-foreground">{new Date(order.createdAt).toLocaleDateString()}</td>
@@ -322,7 +357,7 @@ function ReservationDetail({ res }: { res: Reservation }) {
 function CustomOrderDetail({ order }: { order: CustomOrder }) {
   const { updateCustomOrderStatus } = useReservations();
   const [statusSelectOpen, setStatusSelectOpen] = useState(false);
-  const [statusValue, setStatusValue] = useState(order.status);
+  const [statusValue, setStatusValue] = useState(normalizeCustomOrderStatus(order.status));
 
   const handleContact = (method: 'whatsapp' | 'email') => {
     const message = `Bonjour ${order.customerName}, je vous contacte concernant votre projet sur mesure de ${order.type}...`;
@@ -371,10 +406,11 @@ function CustomOrderDetail({ order }: { order: CustomOrder }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-none shadow-xl">
-                  <SelectItem value="Étude">Étude</SelectItem>
-                  <SelectItem value="Fabrication">Fabrication</SelectItem>
-                  <SelectItem value="Finition">Finition</SelectItem>
-                  <SelectItem value="Prêt à livrer">Prêt à livrer</SelectItem>
+                  {CUSTOM_ORDER_STATUS_OPTIONS.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
           </div>

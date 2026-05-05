@@ -108,7 +108,18 @@ export interface CustomOrder {
     estimatedPrice: number;
     notes?: string;
   };
-  status: 'Étude' | 'Fabrication' | 'Finition' | 'Prêt à livrer';
+  status:
+    | 'Nouveau'
+    | 'Étude & devis'
+    | 'Validation client'
+    | 'En fabrication'
+    | 'Finition'
+    | 'Prêt à livrer'
+    | 'Livré'
+    | 'Annulé'
+    // Compatibilité données existantes
+    | 'Étude'
+    | 'Fabrication';
   createdAt: string;
 }
 
