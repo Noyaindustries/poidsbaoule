@@ -205,6 +205,8 @@ export default function ReservationManager() {
 
 function ReservationDetail({ res }: { res: Reservation }) {
   const { updateReservationStatus } = useReservations();
+  const [statusSelectOpen, setStatusSelectOpen] = useState(false);
+  const [statusValue, setStatusValue] = useState(res.status);
   
   const handleContact = (method: 'whatsapp' | 'email') => {
     const message = `Bonjour ${res.customerName}, je reviens vers vous concernant votre demande de ${res.type} chez Poids Baoulé Home Design...`;
@@ -242,7 +244,22 @@ function ReservationDetail({ res }: { res: Reservation }) {
           </div>
            <div className="space-y-4 text-right">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Statut</h3>
-             <Select value={res.status} onValueChange={async (val: any) => await updateReservationStatus(res.id, val)}>
+             <Select
+                value={statusValue}
+                open={statusSelectOpen}
+                onOpenChange={setStatusSelectOpen}
+                onValueChange={async (val: any) => {
+                  setStatusSelectOpen(false);
+                  const previous = statusValue;
+                  setStatusValue(val);
+                  try {
+                    await updateReservationStatus(res.id, val);
+                  } catch {
+                    setStatusValue(previous);
+                    toast.error('Impossible de mettre à jour le statut de la réservation.');
+                  }
+                }}
+              >
                 <SelectTrigger className="w-[180px] h-11 rounded-xl bg-muted/30 border-none text-right">
                   <SelectValue />
                 </SelectTrigger>
@@ -304,6 +321,8 @@ function ReservationDetail({ res }: { res: Reservation }) {
 
 function CustomOrderDetail({ order }: { order: CustomOrder }) {
   const { updateCustomOrderStatus } = useReservations();
+  const [statusSelectOpen, setStatusSelectOpen] = useState(false);
+  const [statusValue, setStatusValue] = useState(order.status);
 
   const handleContact = (method: 'whatsapp' | 'email') => {
     const message = `Bonjour ${order.customerName}, je vous contacte concernant votre projet sur mesure de ${order.type}...`;
@@ -332,7 +351,22 @@ function CustomOrderDetail({ order }: { order: CustomOrder }) {
           </div>
            <div className="space-y-4 text-right">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Statut</h3>
-             <Select value={order.status} onValueChange={async (val: any) => await updateCustomOrderStatus(order.id, val)}>
+             <Select
+                value={statusValue}
+                open={statusSelectOpen}
+                onOpenChange={setStatusSelectOpen}
+                onValueChange={async (val: any) => {
+                  setStatusSelectOpen(false);
+                  const previous = statusValue;
+                  setStatusValue(val);
+                  try {
+                    await updateCustomOrderStatus(order.id, val);
+                  } catch {
+                    setStatusValue(previous);
+                    toast.error('Impossible de mettre à jour le statut du projet sur mesure.');
+                  }
+                }}
+              >
                 <SelectTrigger className="w-[180px] h-11 rounded-xl bg-muted/30 border-none text-right">
                   <SelectValue />
                 </SelectTrigger>
