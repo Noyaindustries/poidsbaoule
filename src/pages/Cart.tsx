@@ -164,7 +164,7 @@ export default function Cart() {
               <div className="space-y-4 pt-4">
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                   <ShieldCheck className="h-4 w-4 text-primary" />
-                  <span>Paiement sécurisé via Wave & Orange Money</span>
+                  <span>Paiement sécurisé à la livraison</span>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                   <Truck className="h-4 w-4 text-primary" />

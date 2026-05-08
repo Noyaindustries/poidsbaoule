@@ -6,7 +6,6 @@ interface OrderContextType {
   orders: Order[];
   addOrder: (order: Order) => Promise<void>;
   updateOrderStatus: (orderId: string, status: Order['status']) => Promise<void>;
-  validateHalfDeposit: (orderId: string) => Promise<void>;
   confirmFinalPayment: (orderId: string) => Promise<void>;
   deleteOrder: (orderId: string) => Promise<void>;
   refreshOrders: () => Promise<void>;
@@ -87,31 +86,6 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  const validateHalfDeposit = async (orderId: string) => {
-    const order = orders.find((o) => o.id === orderId);
-    if (!order) return;
-    const halfPaid = Math.round(order.total / 2);
-    const balance = Math.max(order.total - halfPaid, 0);
-    try {
-      await apiJson(`/api/orders/${encodeURIComponent(orderId)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          amountPaid: halfPaid,
-          balanceDue: balance,
-          status: 'En attente de paiement',
-        }),
-      });
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId ? { ...o, amountPaid: halfPaid, balanceDue: balance, status: 'En attente de paiement' } : o
-        )
-      );
-    } catch (e) {
-      console.error('Failed to validate half deposit in DB:', e);
-      throw e;
-    }
-  };
-
   const deleteOrder = async (orderId: string) => {
     try {
       await apiJson(`/api/orders/${encodeURIComponent(orderId)}`, {
@@ -129,7 +103,6 @@ export const OrderProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         orders,
         addOrder,
         updateOrderStatus,
-        validateHalfDeposit,
         confirmFinalPayment,
         deleteOrder,
         refreshOrders: fetchOrders,

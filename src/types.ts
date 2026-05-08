@@ -172,18 +172,9 @@ export interface Order {
   items: CartItem[];
   total: number;
   status: 'En attente de paiement' | 'Paiement reçu' | 'En préparation' | 'Expédiée' | 'Livrée' | 'Annulée';
-  paymentMethod: 'Wave' | 'Orange Money' | 'Paiement à la livraison';
-  paymentStrategy: 'FULL' | '50-50' | 'CASH';
+  paymentMethod: 'Paiement à la livraison';
   amountPaid: number;
   balanceDue: number;
-  /** Référence / ID de transaction mobile money (optionnel, saisi par le client). */
-  paymentReference?: string;
-  /** Identifiant de confirmation serveur (preuve d'encaissement). */
-  paymentConfirmationId?: string;
-  /** Identifiant de transaction confirmé par le backend. */
-  paymentTransactionId?: string;
-  /** Horodatage de confirmation serveur du prélèvement. */
-  paymentConfirmedAt?: string;
   shippingAddress: Address;
   createdAt: string;
 }

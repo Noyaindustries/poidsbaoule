@@ -29,12 +29,13 @@ import { Product } from '@/types';
 import { LocalImageField } from '@/components/admin/LocalImageField';
 
 export default function ProductManager() {
-  const { products, updateProduct } = useProducts();
+  const { products, updateProduct, deleteProduct } = useProducts();
   const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'critical' | 'healthy'>('all');
   const [isEditing, setIsEditing] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [pendingDeleteProduct, setPendingDeleteProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     const onQuick = (e: Event) => {
@@ -84,6 +85,15 @@ export default function ProductManager() {
       setIsCreateOpen(false);
     } catch (error: any) {
       toast.error(`Échec de création: ${error?.message ?? 'Erreur inconnue'}`);
+    }
+  };
+
+  const handleDelete = async (product: Product) => {
+    try {
+      await deleteProduct(product.id);
+      toast.success('Produit supprimé.');
+    } catch (error: any) {
+      toast.error(`Suppression impossible: ${error?.message ?? 'Erreur inconnue'}`);
     }
   };
 
@@ -241,7 +251,7 @@ export default function ProductManager() {
                               <Globe className="h-4 w-4" /> Voir sur le site
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="rounded-xl flex gap-3 p-3 text-destructive hover:bg-destructive/10">
+                            <DropdownMenuItem onClick={() => setPendingDeleteProduct(p)} className="rounded-xl flex gap-3 p-3 text-destructive hover:bg-destructive/10">
                               <Trash2 className="h-4 w-4" /> Supprimer
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -269,6 +279,30 @@ export default function ProductManager() {
             product={selectedProduct} 
             onSave={handleSave}
           />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(pendingDeleteProduct)} onOpenChange={(open) => !open && setPendingDeleteProduct(null)}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Supprimer ce produit ?</DialogTitle>
+            <DialogDescription>
+              Cette action est irreversible. Le produit <span className="font-semibold">{pendingDeleteProduct?.name}</span> sera supprime du catalogue.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDeleteProduct(null)}>Annuler</Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!pendingDeleteProduct) return;
+                await handleDelete(pendingDeleteProduct);
+                setPendingDeleteProduct(null);
+              }}
+            >
+              Supprimer
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -414,7 +448,7 @@ function ProductForm({ product, onSave }: { product?: Product, onSave: (p: Produ
                   />
                   <SelectValue placeholder="Choisir une catégorie" />
                 </SelectTrigger>
-                <SelectContent className="min-w-[var(--anchor-width)]">
+                <SelectContent className="min-w-(--anchor-width)">
                   {categoryOptions.map((cat) => (
                     <SelectItem key={cat} value={cat}>
                       <img

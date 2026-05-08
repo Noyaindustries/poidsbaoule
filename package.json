@@ -11,7 +11,8 @@
     "start": "tsx server/index.ts",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "seed:test": "tsx server/seed-test-data.ts"
+    "seed:test": "tsx server/seed-test-data.ts",
+    "migrate:orders:remove-payment-strategy": "tsx server/migrate-remove-payment-strategy.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

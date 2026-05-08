@@ -4,13 +4,35 @@ import { apiJson } from './api';
 
 interface ProductContextType {
   products: Product[];
+  isLoadingProducts: boolean;
   updateProduct: (updatedProduct: Product) => Promise<Product>;
+  deleteProduct: (productId: string) => Promise<void>;
   decrementStock: (productId: string, quantity: number) => Promise<void>;
   getProduct: (id: string) => Product | undefined;
   refreshProducts: () => Promise<void>;
 }
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined);
+const PRODUCTS_CACHE_KEY = 'pb_products_cache_v1';
+
+const getCachedProducts = (): Product[] => {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as Product[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const setCachedProducts = (products: Product[]) => {
+  try {
+    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(products));
+  } catch {
+    // Cache best-effort: ignorer les erreurs de quota/accès localStorage.
+  }
+};
 
 export const useProducts = () => {
   const context = useContext(ProductContext);
@@ -21,14 +43,20 @@ export const useProducts = () => {
 };
 
 export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<Product[]>(() => getCachedProducts());
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(products.length === 0);
 
   const fetchProducts = async () => {
+    setIsLoadingProducts(true);
     try {
       const data = await apiJson<Product[]>('/api/products');
-      setProducts(Array.isArray(data) ? data : []);
+      const normalized = Array.isArray(data) ? data : [];
+      setProducts(normalized);
+      setCachedProducts(normalized);
     } catch (e) {
       console.error('Failed to fetch products:', e);
+    } finally {
+      setIsLoadingProducts(false);
     }
   };
 
@@ -72,6 +100,13 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
+  const deleteProduct = async (productId: string) => {
+    await apiJson(`/api/products/${encodeURIComponent(productId)}`, {
+      method: 'DELETE',
+    });
+    setProducts((prev) => prev.filter((p) => p.id !== productId));
+  };
+
   const getProduct = (id: string) => {
     return products.find((p) => p.id === id);
   };
@@ -80,7 +115,9 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
     <ProductContext.Provider
       value={{
         products,
+        isLoadingProducts,
         updateProduct,
+        deleteProduct,
         decrementStock,
         getProduct,
         refreshProducts: fetchProducts,

@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
 import { Link, useNavigate } from 'react-router-dom';
 import { buildWhatsAppPhonePrefillUrl, PRODUCTS, WHATSAPP_STORE_PHONE_E164 } from '@/constants';
@@ -15,27 +14,18 @@ import { useProducts } from '@/lib/ProductContext';
 import { useOrders } from '@/lib/OrderContext';
 import { useUsers } from '@/lib/UserContext';
 import { usePromos } from '@/lib/PromoContext';
-import { ApiError, apiJson } from '@/lib/api';
 import { Gift, Clock, Sparkles, Tag, X } from 'lucide-react';
-import type { CheckoutPaymentMethod } from '@/lib/mobile-money-checkout';
 import {
   computeAmountDueNow,
-  getMerchantPhoneDisplay,
-  getMobileMoneyInstructions,
-  isMobileMoneyOperator,
-  mapCheckoutPaymentToOrderMethod,
 } from '@/lib/mobile-money-checkout';
 import type { Discount, PromoCode } from '@/types';
 
 export default function Checkout() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('orange');
-  const [paymentStrategy, setPaymentStrategy] = useState<'FULL' | '50-50' | 'CASH'>('FULL');
-  const [paymentReference, setPaymentReference] = useState('');
+  const paymentMethod = 'cash' as const;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
-  const [placedTransactionId, setPlacedTransactionId] = useState<string | null>(null);
 
   const { items, clearCart, totalPrice } = useCart();
   const { decrementStock } = useProducts();
@@ -85,12 +75,7 @@ export default function Checkout() {
 
   const finalTotal = Math.max(0, totalPrice - getDiscountAmount());
 
-  const amountDueNow = computeAmountDueNow(finalTotal, paymentMethod, paymentStrategy);
-
-  const mobileInstructions = useMemo(() => {
-    if (paymentStrategy === 'CASH' || !isMobileMoneyOperator(paymentMethod)) return null;
-    return getMobileMoneyInstructions(paymentMethod, amountDueNow, formData.fullName);
-  }, [paymentMethod, paymentStrategy, amountDueNow, formData.fullName]);
+  const amountDueNow = computeAmountDueNow(finalTotal, paymentMethod);
 
   const isStepOneValid = useMemo(() => {
     const name = formData.fullName.trim();
@@ -132,53 +117,11 @@ export default function Checkout() {
 
   const handlePlaceOrder = async () => {
     if (isSubmitting) return;
-    if (paymentStrategy === 'FULL' && isMobileMoneyOperator(paymentMethod) && !navigator.onLine) {
-      toast.error("Paiement mobile indisponible hors ligne. Reconnectez-vous pour payer en ligne.");
-      return;
-    }
 
     setIsSubmitting(true);
     try {
-      let paymentConfirmationId: string | undefined;
-      let paymentTransactionId: string | undefined;
-      let paymentConfirmedAt: string | undefined;
-      if (paymentStrategy === 'FULL' && isMobileMoneyOperator(paymentMethod)) {
-        const refTrim = paymentReference.trim();
-        if (!refTrim) {
-          toast.error('Référence de transaction requise pour confirmer le prélèvement mobile.');
-          return;
-        }
-        const paymentMethodLabel = mapCheckoutPaymentToOrderMethod(paymentMethod);
-        const chargeResult = await apiJson<{
-          paymentConfirmationId: string;
-          transactionId: string;
-          status: string;
-          confirmedAt: string;
-        }>('/api/payments/mobile/charge', {
-          method: 'POST',
-          body: JSON.stringify({
-            paymentMethod: paymentMethodLabel,
-            amount: amountDueNow,
-            customerPhone: formData.phone,
-            paymentReference: refTrim,
-          }),
-        });
-        if (!chargeResult.paymentConfirmationId || chargeResult.status !== 'CONFIRMED') {
-          toast.error('Prélèvement mobile non confirmé. La commande n’a pas été créée.');
-          return;
-        }
-        paymentConfirmationId = chargeResult.paymentConfirmationId;
-        paymentTransactionId = chargeResult.transactionId;
-        paymentConfirmedAt = chargeResult.confirmedAt;
-      }
-
       // Create and save new order
       const nextOrderId = `PBH-2026-${Math.floor(Math.random() * 900) + 100}`;
-      const refTrim = paymentReference.trim();
-      const orderPaymentMethod =
-        paymentStrategy === 'CASH'
-          ? 'Paiement à la livraison'
-          : mapCheckoutPaymentToOrderMethod(paymentMethod);
       await addOrder({
         id: nextOrderId,
         userId: currentUser?.id || "guest-" + Math.random().toString(36).substr(2, 9),
@@ -187,15 +130,10 @@ export default function Checkout() {
         customerPhone: formData.phone,
         items: [...items],
         total: finalTotal,
-        paymentStrategy,
-        amountPaid: paymentStrategy === 'FULL' ? amountDueNow : 0,
-        balanceDue: paymentStrategy === 'FULL' ? Math.max(finalTotal - amountDueNow, 0) : finalTotal,
-        status: paymentStrategy === 'FULL' ? 'Paiement reçu' : 'En attente de paiement',
-        paymentMethod: orderPaymentMethod,
-        ...(paymentConfirmationId ? { paymentConfirmationId } : {}),
-        ...(paymentTransactionId ? { paymentTransactionId } : {}),
-        ...(paymentConfirmedAt ? { paymentConfirmedAt } : {}),
-        ...(refTrim ? { paymentReference: refTrim } : {}),
+        amountPaid: 0,
+        balanceDue: finalTotal,
+        status: 'En attente de paiement',
+        paymentMethod: 'Paiement à la livraison',
         shippingAddress: {
           id: "addr-" + nextOrderId,
           street: formData.address + ", " + formData.commune,
@@ -217,51 +155,22 @@ export default function Checkout() {
 
       toast.success("Commande passée avec succès !");
       setPlacedOrderId(nextOrderId);
-      setPlacedTransactionId(paymentTransactionId ?? null);
       clearCart();
-      if (paymentStrategy === '50-50') {
-        const msg = [
-          'Bonjour équipe Poids Baoulé,',
-          '',
-          `Je viens de régler l'acompte de 50% pour la commande ${nextOrderId}.`,
-          `Montant versé : ${amountDueNow.toLocaleString('fr-FR')} FCFA.`,
-          `Nom client : ${formData.fullName}.`,
-          '',
-          "Je vous envoie ici la capture de paiement.",
-        ].join('\n');
-        window.location.href = buildWhatsAppPhonePrefillUrl(WHATSAPP_STORE_PHONE_E164, msg);
-        return;
-      }
-      if (paymentStrategy === 'CASH') {
-        toast.success("Commande confirmée. Contactez le service client pour la confirmation du paiement de 50%.");
-        const msg = [
-          'Bonjour équipe Poids Baoulé,',
-          '',
-          `Je confirme la commande ${nextOrderId} en paiement à la livraison.`,
-          `Nom client : ${formData.fullName}.`,
-          `Téléphone : ${formData.phone}.`,
-          '',
-          "Merci de me confirmer la date de livraison.",
-          "Je dois contacter le service client pour la confirmation du paiement de 50%.",
-        ].join('\n');
-        window.location.href = buildWhatsAppPhonePrefillUrl(WHATSAPP_STORE_PHONE_E164, msg);
-        return;
-      }
-      setStep(3);
+      toast.success("Commande confirmée. Contactez le service client pour la confirmation du paiement.");
+      const msg = [
+        'Bonjour équipe Poids Baoulé,',
+        '',
+        `Je confirme la commande ${nextOrderId} en paiement à la livraison.`,
+        `Nom client : ${formData.fullName}.`,
+        `Téléphone : ${formData.phone}.`,
+        '',
+        "Merci de me confirmer la date de livraison.",
+      ].join('\n');
+      window.location.href = buildWhatsAppPhonePrefillUrl(WHATSAPP_STORE_PHONE_E164, msg);
+      return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Impossible d'enregistrer la commande.";
-      if (error instanceof ApiError) {
-        const m = message.toLowerCase();
-        if (m.includes('timeout')) {
-          toast.error('Le prélèvement a expiré (time-out). Réessayez.');
-        } else if (m.includes('annul')) {
-          toast.error('Prélèvement annulé. La commande n’a pas été validée.');
-        } else {
-          toast.error(message);
-        }
-      } else {
-        toast.error(message);
-      }
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -282,11 +191,6 @@ export default function Checkout() {
           <p className="text-base text-muted-foreground sm:text-lg">
             Merci pour votre achat ! Votre commande <span className="font-bold text-foreground">#{placedOrderId ?? 'PBH-2026-...'}</span> a été enregistrée.
           </p>
-          {placedTransactionId && (
-            <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
-              Référence transaction mobile confirmée : <span className="font-bold">{placedTransactionId}</span>
-            </p>
-          )}
           <div className="bg-muted/30 p-6 rounded-2xl border w-full text-left space-y-4">
             <h4 className="font-bold uppercase tracking-widest text-xs">Prochaines étapes</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
@@ -424,97 +328,15 @@ export default function Checkout() {
 
                 <div className="space-y-6">
                   <h3 className="text-xl font-serif font-bold">Mode de paiement</h3>
-                  <RadioGroup
-                    value={paymentStrategy}
-                    onValueChange={(v) => setPaymentStrategy(v as 'FULL' | '50-50' | 'CASH')}
-                    className="grid grid-cols-1 gap-3 lg:grid-cols-3"
-                  >
-                    <Label
-                      htmlFor="strategy-full"
-                      className={`flex min-w-0 cursor-pointer flex-col gap-1 rounded-2xl border-2 p-3 transition-all ${paymentStrategy === 'FULL' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                    >
-                      <p className="font-bold leading-tight">Paiement intégral</p>
-                      <p className="text-[11px] text-muted-foreground">100% maintenant</p>
-                      <RadioGroupItem value="FULL" id="strategy-full" className="sr-only" />
-                    </Label>
-                    <Label
-                      htmlFor="strategy-half"
-                      className={`flex min-w-0 cursor-pointer flex-col gap-1 rounded-2xl border-2 p-3 transition-all ${paymentStrategy === '50-50' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                    >
-                      <p className="font-bold leading-tight">50% d'avance</p>
-                      <p className="text-[11px] text-muted-foreground">50% maintenant, 50% à la livraison</p>
-                      <RadioGroupItem value="50-50" id="strategy-half" className="sr-only" />
-                    </Label>
-                    <Label
-                      htmlFor="strategy-cash"
-                      className={`flex min-w-0 cursor-pointer flex-col gap-1 rounded-2xl border-2 p-3 transition-all ${paymentStrategy === 'CASH' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                    >
-                      <p className="font-bold leading-tight">Payer à la livraison</p>
-                      <p className="text-[11px] text-muted-foreground">0% maintenant</p>
-                      <RadioGroupItem value="CASH" id="strategy-cash" className="sr-only" />
-                    </Label>
-                  </RadioGroup>
-
-                  {paymentStrategy !== 'CASH' && (
-                    <>
-                      <h4 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Opérateur mobile money</h4>
-                  <RadioGroup
-                    value={paymentMethod}
-                    onValueChange={(v) => setPaymentMethod(v as CheckoutPaymentMethod)}
-                    className="grid grid-cols-1 gap-3 sm:grid-cols-2"
-                  >
-                    <Label
-                      htmlFor="orange"
-                      className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border-2 p-3 transition-all sm:flex-row sm:items-center sm:justify-between sm:p-4 ${paymentMethod === 'orange' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#FF6600] text-sm font-bold text-white">
-                          O
-                        </div>
-                        <div className="min-w-0 space-y-0.5">
-                          <p className="font-bold leading-tight">Orange Money</p>
-                          <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Mobile Money</p>
-                        </div>
-                      </div>
-                      <RadioGroupItem value="orange" id="orange" className="sr-only" />
-                    </Label>
-
-                    <Label
-                      htmlFor="wave"
-                      className={`flex min-w-0 cursor-pointer flex-col gap-2 rounded-2xl border-2 p-3 transition-all sm:flex-row sm:items-center sm:justify-between sm:p-4 ${paymentMethod === 'wave' ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/20'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#00AEEF] text-sm font-bold text-white">
-                          W
-                        </div>
-                        <div className="min-w-0 space-y-0.5">
-                          <p className="font-bold leading-tight">Wave</p>
-                          <p className="text-[9px] uppercase tracking-widest text-muted-foreground">Mobile Money</p>
-                        </div>
-                      </div>
-                      <RadioGroupItem value="wave" id="wave" className="sr-only" />
-                    </Label>
-
-                  </RadioGroup>
-                    </>
-                  )}
+                  <div className="rounded-2xl border-2 border-primary bg-primary/5 p-4">
+                    <p className="font-bold leading-tight">Paiement à la livraison</p>
+                    <p className="text-xs text-muted-foreground">Le règlement se fait directement au livreur.</p>
+                  </div>
                 </div>
 
-                {paymentStrategy === 'FULL' && isMobileMoneyOperator(paymentMethod) && (
-                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
-                    Le paiement mobile est traité en ligne. Vous pouvez régler en intégral ou avec 50% d'avance.
-                  </div>
-                )}
-                {paymentStrategy === '50-50' && (
-                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
-                    Après validation, vous serez redirigé vers WhatsApp pour envoyer la capture du paiement de l'acompte (50%). L'admin validera ensuite le paiement.
-                  </div>
-                )}
-                {paymentStrategy === 'CASH' && (
-                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
-                    Vous réglez le montant de la commande à la réception, directement au livreur.
-                  </div>
-                )}
+                <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
+                  Vous réglez le montant de la commande à la réception, directement au livreur.
+                </div>
 
                 <div className="space-y-4 rounded-2xl border bg-muted/30 p-4 sm:p-5">
                   <div className="flex flex-wrap items-center gap-2 text-primary">
@@ -525,40 +347,8 @@ export default function Checkout() {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Numéro marchand :{' '}
-                    <span className="font-semibold text-foreground">{getMerchantPhoneDisplay()}</span>
+                    Montant à payer en ligne : <span className="font-semibold text-foreground">0 FCFA</span>
                   </p>
-
-                  {mobileInstructions && (
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{mobileInstructions.headline}</p>
-                      <ul className="mt-3 list-inside list-disc space-y-2 text-sm text-muted-foreground">
-                        {mobileInstructions.bullets.map((line, i) => (
-                          <li key={i} className="leading-relaxed">
-                            {line}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {paymentStrategy === 'FULL' && isMobileMoneyOperator(paymentMethod) && (
-                    <div className="space-y-2">
-                      <Label htmlFor="payment-ref" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                        Référence de paiement (obligatoire)
-                      </Label>
-                      <Input
-                        id="payment-ref"
-                        placeholder="Ex. ID Wave, reçu Orange Money…"
-                        className="rounded-xl"
-                        value={paymentReference}
-                        onChange={(e) => setPaymentReference(e.target.value)}
-                      />
-                      <p className="text-[11px] text-muted-foreground">
-                        Requise pour confirmer le prélèvement côté serveur et valider la commande.
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 <Button
@@ -566,11 +356,7 @@ export default function Checkout() {
                   onClick={handlePlaceOrder}
                   disabled={isSubmitting}
                 >
-                  {isSubmitting
-                    ? paymentStrategy === 'CASH'
-                      ? 'Validation de la commande...'
-                      : 'Traitement du prélèvement...'
-                    : 'Confirmer la commande'}
+                  {isSubmitting ? 'Validation de la commande...' : 'Confirmer la commande'}
                 </Button>
               </motion.div>
             )}

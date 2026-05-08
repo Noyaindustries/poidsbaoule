@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Filter, Download, UserPlus, 
-  Mail, Phone, MapPin, MoreVertical,
+  Mail, Phone, MapPin, MoreVertical, Trash2,
   Star, TrendingUp, ShoppingBag, Calendar
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
   SheetDescription
 } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { exportToCSV } from '@/lib/admin-utils';
 import { useUsers } from '@/lib/UserContext';
@@ -28,7 +29,8 @@ import { Label } from '@/components/ui/label';
 export default function ClientCRM() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClient, setSelectedClient] = useState<any>(null);
-  const { users } = useUsers();
+  const [pendingDeleteClient, setPendingDeleteClient] = useState<any>(null);
+  const { users, deleteUser } = useUsers();
   const { orders } = useOrders();
 
   const getClientData = (user: any) => {
@@ -44,6 +46,15 @@ export default function ClientCRM() {
 
   const handleExport = () => {
     exportToCSV(filteredClients, 'Base_Clients_PBH');
+  };
+
+  const handleDeleteClient = async (client: any) => {
+    try {
+      await deleteUser(client.id);
+      toast.success('Client supprimé.');
+    } catch (error: any) {
+      toast.error(error?.message ?? 'Suppression impossible.');
+    }
   };
 
   // Calculate Real Global Stats
@@ -124,16 +135,37 @@ export default function ClientCRM() {
                       </Badge>
                     </td>
                     <td className="px-8 py-6 text-right">
-                      <Sheet>
-                        <SheetTrigger 
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
                           render={
-                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100" onClick={() => setSelectedClient(client)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100">
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           }
                         />
-                        <ClientDetails client={selectedClient} />
-                      </Sheet>
+                        <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 shadow-xl border-none">
+                          <Sheet>
+                            <SheetTrigger
+                              render={
+                                <DropdownMenuItem
+                                  onClick={() => setSelectedClient(client)}
+                                  className="rounded-xl flex gap-3 p-3"
+                                >
+                                  <UserPlus className="h-4 w-4" /> Voir fiche client
+                                </DropdownMenuItem>
+                              }
+                            />
+                            <ClientDetails client={selectedClient} />
+                          </Sheet>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => setPendingDeleteClient(client)}
+                            className="rounded-xl flex gap-3 p-3 text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" /> Supprimer
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </td>
                   </tr>
                 ))}
@@ -142,6 +174,30 @@ export default function ClientCRM() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(pendingDeleteClient)} onOpenChange={(open) => !open && setPendingDeleteClient(null)}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Supprimer ce client ?</DialogTitle>
+            <DialogDescription>
+              Cette action est irreversible. Le compte de <span className="font-semibold">{pendingDeleteClient?.name}</span> sera supprime.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDeleteClient(null)}>Annuler</Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!pendingDeleteClient) return;
+                await handleDeleteClient(pendingDeleteClient);
+                setPendingDeleteClient(null);
+              }}
+            >
+              Supprimer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -232,6 +288,7 @@ function ClientDetails({ client: initialClient }: { client: any }) {
             <div className="space-y-2">
               <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-2">Validité (Jours)</Label>
               <select 
+                aria-label="Durée de validité de la remise"
                 className="w-full h-12 rounded-2xl bg-white border-none shadow-sm px-4 text-sm outline-none"
                 value={discountExpiry}
                 onChange={(e) => setDiscountExpiry(e.target.value)}

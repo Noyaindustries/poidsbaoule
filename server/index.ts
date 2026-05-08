@@ -90,7 +90,6 @@ async function ensureIndexes(): Promise<void> {
   await db.collection('users').createIndex({ email: 1 }, { unique: true });
   await db.collection('products').createIndex({ id: 1 }, { unique: true });
   await db.collection('orders').createIndex({ id: 1 }, { unique: true });
-  await db.collection('payment_confirmations').createIndex({ id: 1 }, { unique: true });
   await db.collection('promo_codes').createIndex({ id: 1 }, { unique: true });
   await db.collection('promo_codes').createIndex({ code: 1 });
   await db.collection('testimonials').createIndex({ id: 1 }, { unique: true });
@@ -235,6 +234,22 @@ app.put('/api/products/:id', async (req: Request, res: Response) => {
   }
 });
 
+app.delete('/api/products/:id', async (req: Request, res: Response) => {
+  try {
+    const db = await getDb();
+    const id = req.params.id;
+    const result = await db.collection('products').deleteOne({ id });
+    if (result.deletedCount === 0) {
+      res.status(404).json({ error: 'produit introuvable' });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur suppression produit' });
+  }
+});
+
 app.patch('/api/products/:id/stock', async (req: Request, res: Response) => {
   try {
     const db = await getDb();
@@ -256,9 +271,7 @@ function stripProductCommentBody(raw: unknown): string {
   return s.length > 2000 ? s.slice(0, 2000) : s;
 }
 
-const ALLOWED_PAYMENT_METHODS = new Set(['Wave', 'Orange Money', 'Paiement à la livraison']);
-const MOBILE_MONEY_METHODS = new Set(['Wave', 'Orange Money']);
-const ONLINE_PAYMENT_METHODS = new Set(['Wave', 'Orange Money']);
+const ALLOWED_PAYMENT_METHODS = new Set(['Paiement à la livraison']);
 const ORDER_ALLOWED_STATUSES = new Set([
   'En attente de paiement',
   'Paiement reçu',
@@ -274,20 +287,6 @@ type NormalizedOrderItem = {
   price: number;
   quantity: number;
   images: string[];
-};
-
-type PaymentConfirmationRecord = {
-  id: string;
-  paymentMethod: string;
-  amount: number;
-  currency: 'XOF';
-  provider: 'MOCK_MOBILE_MONEY';
-  transactionId: string;
-  status: 'CONFIRMED';
-  createdAt: string;
-  confirmedAt: string;
-  usedAt?: string;
-  orderId?: string;
 };
 
 function toFiniteAmount(value: unknown): number {
@@ -319,12 +318,6 @@ function computeTotalFromItems(items: NormalizedOrderItem[]): number {
   return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 }
 
-function computeAmountDueNow(total: number, paymentMethod: string, paymentStrategy: string): number {
-  void paymentMethod;
-  if (paymentStrategy === '50-50') return Math.round(total / 2);
-  return total;
-}
-
 function sanitizeOrderStatus(value: unknown): string {
   const status = String(value ?? '');
   if (!ORDER_ALLOWED_STATUSES.has(status)) return 'En attente de paiement';
@@ -337,29 +330,6 @@ function isValidEmail(value: string): boolean {
 
 function isValidPhone(value: string): boolean {
   return /^[+\d][\d\s-]{7,}$/.test(value);
-}
-
-function validateOnlineOnlyMobilePayment(order: Record<string, unknown>): string | null {
-  const paymentMethod = String(order.paymentMethod ?? '');
-  if (!MOBILE_MONEY_METHODS.has(paymentMethod)) return null;
-
-  const paymentStrategy = String(order.paymentStrategy ?? '');
-  const amountPaid = Number(order.amountPaid);
-  const total = Number(order.total);
-  const balanceDue = Number(order.balanceDue);
-
-  if (paymentStrategy !== 'FULL' && paymentStrategy !== '50-50') {
-    return 'Le paiement mobile autorise uniquement FULL ou 50-50.';
-  }
-  const expectedDueNow = computeAmountDueNow(total, paymentMethod, paymentStrategy);
-  if (!Number.isFinite(amountPaid) || !Number.isFinite(total) || amountPaid < expectedDueNow) {
-    return 'Paiement mobile refusé: montant encaissé insuffisant pour la stratégie choisie.';
-  }
-  const expectedBalance = Math.max(total - expectedDueNow, 0);
-  if (!Number.isFinite(balanceDue) || balanceDue !== expectedBalance) {
-    return 'Paiement mobile refusé: solde différé incohérent.';
-  }
-  return null;
 }
 
 // --- Commentaires produits (vitrine) ---
@@ -471,11 +441,8 @@ app.post('/api/orders', async (req: Request, res: Response) => {
     const customerEmail = String(input.customerEmail ?? '').trim();
     const customerPhone = String(input.customerPhone ?? '').trim();
     const paymentMethod = String(input.paymentMethod ?? '');
-    const paymentStrategy = String(input.paymentStrategy ?? 'FULL').trim();
     const items = sanitizeOrderItems(input.items);
     const total = computeTotalFromItems(items);
-    const amountDueNow = computeAmountDueNow(total, paymentMethod, paymentStrategy);
-    const isOnlinePayment = ONLINE_PAYMENT_METHODS.has(paymentMethod);
     const shippingAddress =
       input.shippingAddress && typeof input.shippingAddress === 'object'
         ? (input.shippingAddress as Record<string, unknown>)
@@ -512,47 +479,6 @@ app.post('/api/orders', async (req: Request, res: Response) => {
       return;
     }
 
-    const mobilePaymentError = validateOnlineOnlyMobilePayment({
-      paymentMethod,
-      paymentStrategy,
-      amountPaid: amountDueNow,
-      total,
-      balanceDue: Math.max(total - amountDueNow, 0),
-    });
-    if (mobilePaymentError) {
-      res.status(400).json({ error: mobilePaymentError });
-      return;
-    }
-
-    let paymentConfirmation: PaymentConfirmationRecord | null = null;
-    if (isOnlinePayment) {
-      const paymentConfirmationId = String(input.paymentConfirmationId ?? '').trim();
-      if (!paymentConfirmationId) {
-        res.status(400).json({
-          error: 'Paiement en ligne requis avant validation: confirmation de transaction manquante.',
-        });
-        return;
-      }
-      paymentConfirmation = (await db.collection('payment_confirmations').findOne({
-        id: paymentConfirmationId,
-        status: 'CONFIRMED',
-        usedAt: { $exists: false },
-      })) as PaymentConfirmationRecord | null;
-
-      if (!paymentConfirmation) {
-        res.status(400).json({ error: 'Preuve de paiement invalide ou déjà utilisée.' });
-        return;
-      }
-      if (paymentConfirmation.paymentMethod !== paymentMethod) {
-        res.status(400).json({ error: 'La preuve de paiement ne correspond pas au moyen sélectionné.' });
-        return;
-      }
-      if (paymentConfirmation.amount < amountDueNow) {
-        res.status(400).json({ error: 'Montant encaissé insuffisant pour valider la commande.' });
-        return;
-      }
-    }
-
     const now = new Date().toISOString();
     const orderDoc = {
       id,
@@ -563,10 +489,9 @@ app.post('/api/orders', async (req: Request, res: Response) => {
       items,
       total,
       paymentMethod,
-      paymentStrategy,
-      amountPaid: isOnlinePayment ? amountDueNow : 0,
-      balanceDue: isOnlinePayment ? Math.max(total - amountDueNow, 0) : total,
-      status: isOnlinePayment ? 'Paiement reçu' : 'En attente de paiement',
+      amountPaid: 0,
+      balanceDue: total,
+      status: 'En attente de paiement',
       shippingAddress: {
         id: String(shippingAddress.id ?? `addr-${id}`),
         street: shippingStreet,
@@ -574,23 +499,10 @@ app.post('/api/orders', async (req: Request, res: Response) => {
         country: String(shippingAddress.country ?? "Côte d'Ivoire").trim(),
         isDefault: Boolean(shippingAddress.isDefault ?? true),
       },
-      paymentReference:
-        typeof input.paymentReference === 'string' && input.paymentReference.trim()
-          ? input.paymentReference.trim().slice(0, 120)
-          : undefined,
-      paymentConfirmationId: paymentConfirmation?.id,
-      paymentTransactionId: paymentConfirmation?.transactionId,
-      paymentConfirmedAt: paymentConfirmation?.confirmedAt,
       createdAt: typeof input.createdAt === 'string' && input.createdAt ? input.createdAt : now,
     };
 
     await db.collection('orders').insertOne(orderDoc);
-    if (paymentConfirmation) {
-      await db.collection('payment_confirmations').updateOne(
-        { id: paymentConfirmation.id },
-        { $set: { usedAt: now, orderId: id } }
-      );
-    }
     res.status(201).json({ ok: true, orderId: id });
   } catch (e) {
     console.error(e);
@@ -617,17 +529,6 @@ app.patch('/api/orders/:id', async (req: Request, res: Response) => {
     const sanitizedPatch: Record<string, unknown> = {};
     if ('status' in patch) {
       const nextStatus = sanitizeOrderStatus(patch.status);
-      const isOnlineOrder = ONLINE_PAYMENT_METHODS.has(String(order.paymentMethod ?? ''));
-      const isPaidStatus = nextStatus !== 'En attente de paiement';
-      const hasServerPaymentProof = Boolean(
-        order.paymentConfirmationId && order.paymentTransactionId && order.paymentConfirmedAt
-      );
-      if (isOnlineOrder && isPaidStatus && !hasServerPaymentProof) {
-        res.status(400).json({
-          error: 'Impossible de valider la commande: aucun paiement en ligne confirmé côté serveur.',
-        });
-        return;
-      }
       sanitizedPatch.status = nextStatus;
     }
 
@@ -636,71 +537,6 @@ app.patch('/api/orders/:id', async (req: Request, res: Response) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Erreur mise à jour commande' });
-  }
-});
-
-app.post('/api/payments/mobile/charge', async (req: Request, res: Response) => {
-  try {
-    const pspMode = String(process.env.MOBILE_MONEY_PSP_MODE ?? '').toLowerCase();
-    if (pspMode !== 'mock') {
-      res.status(503).json({
-        error:
-          'Prélèvement mobile indisponible: aucun PSP configuré côté serveur. Activez MOBILE_MONEY_PSP_MODE=mock pour les tests.',
-      });
-      return;
-    }
-
-    const payload = req.body as Record<string, unknown>;
-    const paymentMethod = String(payload.paymentMethod ?? '');
-    const amount = toFiniteAmount(payload.amount);
-    const customerPhone = String(payload.customerPhone ?? '').trim();
-    const paymentReference = String(payload.paymentReference ?? '').trim();
-
-    if (!MOBILE_MONEY_METHODS.has(paymentMethod)) {
-      res.status(400).json({ error: 'Moyen de paiement mobile invalide.' });
-      return;
-    }
-    if (amount <= 0) {
-      res.status(400).json({ error: 'Montant de prélèvement invalide.' });
-      return;
-    }
-    if (!customerPhone) {
-      res.status(400).json({ error: 'Numéro client requis pour le prélèvement mobile.' });
-      return;
-    }
-    if (!paymentReference) {
-      res.status(400).json({ error: 'Référence transaction requise pour confirmer le prélèvement.' });
-      return;
-    }
-
-    const db = await getDb();
-    const now = new Date().toISOString();
-    const confirmation: PaymentConfirmationRecord = {
-      id: randomUUID(),
-      paymentMethod,
-      amount,
-      currency: 'XOF',
-      provider: 'MOCK_MOBILE_MONEY',
-      transactionId: `MM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      status: 'CONFIRMED',
-      createdAt: now,
-      confirmedAt: now,
-    };
-    await db.collection('payment_confirmations').insertOne({
-      ...confirmation,
-      customerPhone,
-      paymentReference: paymentReference.slice(0, 120),
-    });
-    res.status(201).json({
-      ok: true,
-      paymentConfirmationId: confirmation.id,
-      transactionId: confirmation.transactionId,
-      status: confirmation.status,
-      confirmedAt: confirmation.confirmedAt,
-    });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Erreur prélèvement mobile' });
   }
 });
 
@@ -1137,6 +973,27 @@ app.patch('/api/users/:id', async (req: Request, res: Response) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Erreur mise à jour utilisateur' });
+  }
+});
+
+app.delete('/api/users/:id', async (req: Request, res: Response) => {
+  try {
+    const db = await getDb();
+    const id = req.params.id;
+    const user = await db.collection('users').findOne({ id });
+    if (!user) {
+      res.status(404).json({ error: 'utilisateur introuvable' });
+      return;
+    }
+    if (String(user.role ?? '') === 'admin') {
+      res.status(400).json({ error: "Suppression d'un compte admin interdite." });
+      return;
+    }
+    await db.collection('users').deleteOne({ id });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur suppression utilisateur' });
   }
 });
 

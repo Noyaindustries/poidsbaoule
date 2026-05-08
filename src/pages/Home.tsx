@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ChevronRight, ArrowRight } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -157,8 +158,25 @@ const Hero = () => {
 };
 
 const FeaturedProducts = () => {
-  const { products } = useProducts();
+  const { products, isLoadingProducts, refreshProducts } = useProducts();
   const featured = products;
+
+  useEffect(() => {
+    const syncProducts = () => {
+      void refreshProducts();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') syncProducts();
+    };
+
+    window.addEventListener('focus', syncProducts);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', syncProducts);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [refreshProducts]);
 
   return (
     <section className="overflow-x-clip bg-background py-12 sm:py-16 md:py-32">
@@ -190,7 +208,11 @@ const FeaturedProducts = () => {
 
           <div className="min-w-0 lg:col-span-7">
             <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-              {featured.length === 0 ? (
+              {isLoadingProducts && featured.length === 0 ? (
+                <div className="md:col-span-2 rounded-[40px] border border-dashed border-muted-foreground/20 p-10 text-center text-muted-foreground">
+                  Chargement des produits...
+                </div>
+              ) : featured.length === 0 ? (
                 <div className="md:col-span-2 rounded-[40px] border border-dashed border-muted-foreground/20 p-10 text-center text-muted-foreground">
                   Aucun produit disponible pour le moment.
                 </div>
@@ -224,8 +246,8 @@ const FeaturedProducts = () => {
                       </Link>
                       <div className="pointer-events-none absolute inset-0 bg-black/20 opacity-0 transition-opacity duration-500 group-hover:opacity-100 max-md:hidden" />
 
-                      {/* Mobile : dans le bloc rogné pour respecter les coins arrondis */}
-                      <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-4 pt-16 md:hidden">
+                      {/* Mobile + tablette : infos visibles sans hover (écrans tactiles) */}
+                      <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-4 pt-16 lg:hidden">
                         <div className="text-white">
                           <p className="mb-1 text-[10px] uppercase tracking-widest text-white/80">{product.category}</p>
                           <h3 className="mb-2 font-serif text-lg font-bold">{product.name}</h3>
@@ -256,7 +278,7 @@ const FeaturedProducts = () => {
                     </div>
 
                     {/* Desktop : survol — hors du overflow de l’image pour ne pas être rogné vers le haut */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 hidden flex-col justify-end p-4 opacity-0 transition-all duration-500 group-hover:pointer-events-auto group-hover:opacity-100 md:flex md:p-6">
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 hidden flex-col justify-end p-4 opacity-0 transition-all duration-500 group-hover:pointer-events-auto group-hover:opacity-100 lg:flex lg:p-6">
                       <div className="pointer-events-auto w-full max-w-md rounded-3xl bg-white/90 p-4 shadow-2xl backdrop-blur-md transition-colors hover:bg-white sm:p-5">
                         <div className="flex flex-row items-end gap-2 sm:gap-2.5">
                           <Link

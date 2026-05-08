@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger, DropdownMenuSeparator 
 } from '@/components/ui/dropdown-menu';
 import { 
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
@@ -30,12 +30,7 @@ export default function OrderManager() {
   const { orders } = useOrders();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [paymentFilter, setPaymentFilter] = useState<'all' | 'deposit_pending' | 'deposit_validated' | 'balance_due'>('all');
-
-  const hasHalfDeposit = (order: Order) =>
-    order.paymentStrategy === '50-50' && order.amountPaid > 0 && order.balanceDue > 0;
-  const isHalfDepositPendingValidation = (order: Order) =>
-    order.paymentStrategy === '50-50' && order.amountPaid === 0 && order.balanceDue > 0;
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'balance_due'>('all');
 
   const filteredOrders = orders.filter(order => {
     const matchesSearch =
@@ -44,8 +39,6 @@ export default function OrderManager() {
       order.customerEmail.toLowerCase().includes(searchQuery.toLowerCase());
     if (!matchesSearch) return false;
 
-    if (paymentFilter === 'deposit_pending') return isHalfDepositPendingValidation(order);
-    if (paymentFilter === 'deposit_validated') return hasHalfDeposit(order);
     if (paymentFilter === 'balance_due') return order.balanceDue > 0;
     return true;
   });
@@ -79,12 +72,6 @@ export default function OrderManager() {
             <Button variant={paymentFilter === 'all' ? 'default' : 'ghost'} size="sm" className="rounded-full text-xs" onClick={() => setPaymentFilter('all')}>
               Toutes
             </Button>
-            <Button variant={paymentFilter === 'deposit_pending' ? 'default' : 'ghost'} size="sm" className="rounded-full text-xs" onClick={() => setPaymentFilter('deposit_pending')}>
-              En attente acompte
-            </Button>
-            <Button variant={paymentFilter === 'deposit_validated' ? 'default' : 'ghost'} size="sm" className="rounded-full text-xs" onClick={() => setPaymentFilter('deposit_validated')}>
-              Acompte validé
-            </Button>
             <Button variant={paymentFilter === 'balance_due' ? 'default' : 'ghost'} size="sm" className="rounded-full text-xs" onClick={() => setPaymentFilter('balance_due')}>
               Solde à encaisser
             </Button>
@@ -115,16 +102,6 @@ export default function OrderManager() {
                     <tr key={order.id} className="hover:bg-muted/20 transition-colors group">
                       <td className="px-8 py-6">
                         <div className="font-bold">{order.id}</div>
-                        {isHalfDepositPendingValidation(order) && (
-                          <Badge variant="outline" className="mt-1 border-violet-200 bg-violet-50 text-[9px] text-violet-700">
-                            Acompte en attente de validation
-                          </Badge>
-                        )}
-                        {hasHalfDeposit(order) && (
-                          <Badge variant="outline" className="mt-1 border-blue-200 bg-blue-50 text-[9px] text-blue-700">
-                            Acompte 50% reçu
-                          </Badge>
-                        )}
                         {order.balanceDue > 0 && (
                           <Badge variant="outline" className="text-[9px] border-amber-200 text-amber-700 bg-amber-50 mt-1">Reste: {order.balanceDue.toLocaleString()} FCFA</Badge>
                         )}
@@ -176,11 +153,10 @@ export default function OrderManager() {
 }
 
 function OrderDetails({ order: initialOrder }: { order: any }) {
-  const { updateOrderStatus, orders, confirmFinalPayment, validateHalfDeposit } = useOrders();
+  const { updateOrderStatus, orders, confirmFinalPayment, deleteOrder } = useOrders();
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   
   const order = orders.find(o => o.id === initialOrder?.id) || initialOrder;
-  const hasHalfDeposit = order?.paymentStrategy === '50-50' && order?.amountPaid > 0 && order?.balanceDue > 0;
-  const needsHalfDepositValidation = order?.paymentStrategy === '50-50' && Number(order?.amountPaid ?? 0) === 0;
 
   if (!order) return null;
 
@@ -219,6 +195,11 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
     window.location.href = `mailto:${order.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
+  const handleDeleteOrder = async () => {
+    await deleteOrder(order.id);
+    toast.success('Commande supprimée.');
+  };
+
   return (
     <DialogContent className="w-[94vw] max-w-[1320px] sm:max-w-[1320px] max-h-[90vh] overflow-x-hidden overflow-y-auto rounded-[32px] border-none p-0 font-sans shadow-2xl">
       <DialogHeader className="p-8 pb-4">
@@ -230,6 +211,11 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
           {order.id}
           <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => window.open(`/checkout/success/${order.id}`, '_blank')}><ExternalLink className="h-4 w-4" /></Button>
         </DialogTitle>
+        <div className="pt-3">
+          <Button variant="destructive" className="rounded-full" onClick={() => setIsDeleteDialogOpen(true)}>
+            <Trash2 className="mr-2 h-4 w-4" /> Supprimer la commande
+          </Button>
+        </div>
       </DialogHeader>
 
       <div className="min-w-0 p-8 pt-4 pb-32 space-y-12">
@@ -281,30 +267,9 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
         <section className="rounded-2xl border border-primary/10 bg-muted/20 p-4">
           <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Moyen de paiement</h3>
           <p className="mt-1 text-sm font-bold text-foreground">{order.paymentMethod}</p>
-          {needsHalfDepositValidation && (
-            <Badge variant="outline" className="mt-2 border-violet-200 bg-violet-50 text-violet-700">
-              Acompte en attente de validation
-            </Badge>
-          )}
-          {hasHalfDeposit && (
-            <Badge variant="outline" className="mt-2 border-blue-200 bg-blue-50 text-blue-700">
-              Acompte 50% reçu
-            </Badge>
-          )}
-          {order.paymentStrategy && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Modalité :{' '}
-              <span className="font-medium text-foreground">
-                {order.paymentStrategy === '50-50' ? '50 % à la commande' : order.paymentStrategy === 'CASH' ? 'Paiement à la livraison' : 'Paiement intégral'}
-              </span>
-            </p>
-          )}
-          {order.paymentReference ? (
-            <p className="mt-2 rounded-lg bg-background/80 px-3 py-2 text-sm">
-              <span className="text-muted-foreground">Réf. indiquée par le client :</span>{' '}
-              <span className="font-mono font-medium">{order.paymentReference}</span>
-            </p>
-          ) : null}
+          <p className="mt-1 text-xs text-muted-foreground">
+            Modalité : <span className="font-medium text-foreground">Paiement à la livraison</span>
+          </p>
         </section>
 
         <Separator className="opacity-50" />
@@ -334,17 +299,7 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
             </div>
           </div>
 
-          {needsHalfDepositValidation ? (
-            <Button
-              className="mt-4 h-11 w-full rounded-xl bg-blue-600 text-xs font-bold text-white shadow-lg shadow-blue-600/20"
-              onClick={async () => {
-                await validateHalfDeposit(order.id);
-                toast.success("Acompte 50% validé !");
-              }}
-            >
-              <CheckCircle2 className="mr-2 h-4 w-4" /> Valider acompte 50%
-            </Button>
-          ) : order.balanceDue > 0 ? (
+          {order.balanceDue > 0 ? (
             <Button 
               className="w-full mt-4 bg-primary text-white rounded-xl h-11 text-xs font-bold shadow-lg shadow-primary/20"
               onClick={async () => {
@@ -515,6 +470,29 @@ function OrderDetails({ order: initialOrder }: { order: any }) {
           </Button>
         </div>
       </div>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Supprimer cette commande ?</DialogTitle>
+            <DialogDescription>
+              Cette action est irreversible. La commande <span className="font-semibold">{order.id}</span> sera supprimee.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Annuler</Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                await handleDeleteOrder();
+                setIsDeleteDialogOpen(false);
+              }}
+            >
+              Supprimer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DialogContent>
   );
 }

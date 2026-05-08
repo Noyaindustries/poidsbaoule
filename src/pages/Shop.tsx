@@ -297,7 +297,7 @@ export default function Shop() {
                             loading="lazy"
                             decoding="async"
                           />
-                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex items-center justify-center">
+                          <div className="absolute inset-0 hidden items-center justify-center bg-black/20 opacity-0 transition-opacity duration-500 group-hover:opacity-100 lg:flex">
                             <Button variant="secondary" className="rounded-full px-6 py-3 shadow-2xl text-sm">
                               Voir les détails
                             </Button>

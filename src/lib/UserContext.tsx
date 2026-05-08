@@ -18,6 +18,7 @@ interface UserContextType {
   /** Mot de passe actuel + nouveau (compte connecté uniquement). */
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   toggleWishlist: (productId: string) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
   refreshUsers: () => Promise<void>;
 }
 
@@ -462,6 +463,37 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await updateUserFields(currentUser.id, { wishlist });
   };
 
+  const deleteUser = async (userId: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return;
+    if (target.role === 'admin') {
+      throw new Error("Suppression d'un compte admin interdite.");
+    }
+
+    if (!useLocalFallback) {
+      try {
+        await apiJson(`/api/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+      } catch (e: unknown) {
+        if (isNetworkError(e)) {
+          setUseLocalFallback(true);
+        } else if (e instanceof ApiError) {
+          throw new Error(e.message);
+        } else {
+          throw e;
+        }
+      }
+    }
+
+    const localUsers = getLocalUsers().filter((u) => u.id !== userId);
+    saveLocalUsers(localUsers);
+    setUsers(localUsers);
+
+    if (currentUser?.id === userId) {
+      setCurrentUser(null);
+      saveLocalCurrentUser(null);
+    }
+  };
+
   return (
     <UserContext.Provider
       value={{
@@ -475,6 +507,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateUserFields,
         changePassword,
         toggleWishlist,
+        deleteUser,
         refreshUsers: fetchUsers,
       }}
     >
