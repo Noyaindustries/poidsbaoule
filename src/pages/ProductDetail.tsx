@@ -22,7 +22,10 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/CartContext';
+import { apiJson } from '@/lib/api';
 import { useProducts } from '@/lib/ProductContext';
+import { primaryProductImage } from '@/lib/productImages';
+import type { Product } from '@/types';
 import { useUsers } from '@/lib/UserContext';
 import { useCategories } from '@/lib/CategoryContext';
 import { FALLBACK_CATEGORY_IMAGE, buildWhatsAppProductUrl } from '@/constants';
@@ -35,19 +38,48 @@ export default function ProductDetail() {
   const [activeImage, setActiveImage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const { addToCart, items, totalItems, totalPrice } = useCart();
-  const { products, getProduct } = useProducts();
+  const { products } = useProducts();
   const { currentUser, toggleWishlist } = useUsers();
   const { getCategoryImage } = useCategories();
 
-  const product = getProduct(id || '');
+  const [product, setProduct] = useState<Product | null>(() =>
+    products.find((p) => p.id === id) ?? null
+  );
+  const [detailLoading, setDetailLoading] = useState(() => !products.find((p) => p.id === id));
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    const fromList = products.find((p) => p.id === id) ?? null;
+    setProduct(fromList);
+    setDetailLoading(true);
+    void apiJson<Product>(`/api/products/${encodeURIComponent(id)}`)
+      .then((full) => {
+        if (!cancelled) setProduct(full);
+      })
+      .catch(() => {
+        if (!cancelled && !fromList) setProduct(null);
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, products]);
   const otherCartLines = useMemo(
     () => items.filter((i) => i.id !== (id || '')).slice(0, 4),
     [items, id]
   );
 
+  const galleryImages = useMemo(() => {
+    if (!product) return [] as string[];
+    return product.images.length > 0 ? product.images : [primaryProductImage(product)];
+  }, [product]);
+
   useEffect(() => {
-    if (!lightboxOpen || !product || product.images.length < 2) return;
-    const len = product.images.length;
+    if (!lightboxOpen || galleryImages.length < 2) return;
+    const len = galleryImages.length;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -59,11 +91,19 @@ export default function ProductDetail() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [lightboxOpen, product]);
+  }, [lightboxOpen, galleryImages]);
 
   useEffect(() => {
     setActiveImage(0);
   }, [id]);
+
+  if (detailLoading && !product) {
+    return (
+      <div className="container mx-auto max-w-full px-4 pb-24 pt-28 text-center text-muted-foreground md:pt-32">
+        Chargement de la fiche produit…
+      </div>
+    );
+  }
 
   if (!product) {
     return (
@@ -129,7 +169,7 @@ export default function ProductDetail() {
               className="group relative m-0 mx-auto aspect-[3/4] w-full max-w-[220px] cursor-zoom-in overflow-hidden rounded-2xl border-0 bg-muted p-0 shadow-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary sm:max-w-[260px] md:max-w-[280px] lg:mx-0 lg:max-w-[240px] xl:max-w-[260px]"
             >
               <img
-                src={product.images[activeImage]}
+                src={galleryImages[activeImage]}
                 alt={product.name}
                 draggable={false}
                 className="h-full w-full select-none object-cover"
@@ -161,9 +201,9 @@ export default function ProductDetail() {
               )}
             </motion.button>
             
-            {product.images.length > 1 && (
+            {galleryImages.length > 1 && (
               <div className="mx-auto grid w-full max-w-[220px] grid-cols-4 gap-1.5 sm:max-w-[260px] sm:gap-2 md:max-w-[280px] lg:mx-0 lg:max-w-[240px] xl:max-w-[260px]">
-                {product.images.map((img, idx) => (
+                {galleryImages.map((img, idx) => (
                   <button
                     key={idx}
                     type="button"
@@ -535,13 +575,13 @@ export default function ProductDetail() {
           <DialogTitle className="sr-only">Galerie photo — {product.name}</DialogTitle>
           <div className="relative flex min-h-[min(50vh,320px)] items-center justify-center">
             <img
-              src={product.images[activeImage]}
+              src={galleryImages[activeImage]}
               alt={product.name}
               draggable={false}
               className="max-h-[min(82vh,900px)] w-full object-contain select-none"
               referrerPolicy="no-referrer"
             />
-            {product.images.length > 1 && (
+            {galleryImages.length > 1 && (
               <>
                 <Button
                   type="button"
@@ -551,7 +591,7 @@ export default function ProductDetail() {
                   aria-label="Photo précédente"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setActiveImage((i) => (i - 1 + product.images.length) % product.images.length);
+                    setActiveImage((i) => (i - 1 + galleryImages.length) % galleryImages.length);
                   }}
                 >
                   <ChevronLeft className="h-5 w-5" />
@@ -564,7 +604,7 @@ export default function ProductDetail() {
                   aria-label="Photo suivante"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setActiveImage((i) => (i + 1) % product.images.length);
+                    setActiveImage((i) => (i + 1) % galleryImages.length);
                   }}
                 >
                   <ChevronRight className="h-5 w-5" />
@@ -572,9 +612,9 @@ export default function ProductDetail() {
               </>
             )}
           </div>
-          {product.images.length > 1 && (
+          {galleryImages.length > 1 && (
             <div className="flex flex-wrap justify-center gap-2 border-t border-white/10 pt-3">
-              {product.images.map((_, idx) => (
+              {galleryImages.map((_, idx) => (
                 <button
                   key={idx}
                   type="button"
@@ -588,7 +628,7 @@ export default function ProductDetail() {
               ))}
             </div>
           )}
-          {product.images.length > 1 && (
+          {galleryImages.length > 1 && (
             <p className="text-center text-[10px] uppercase tracking-widest text-white/45">
               Flèches du clavier · échap pour fermer
             </p>

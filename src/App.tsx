@@ -29,6 +29,7 @@ const Cart = lazy(() => import('./pages/Cart'));
 const Checkout = lazy(() => import('./pages/Checkout'));
 const Account = lazy(() => import('./pages/Account'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const InfoPage = lazy(() => import('./pages/InfoPage'));
 
 const MOBILE_NAV_GROUPS = [
   {
@@ -493,6 +494,10 @@ const AppLayout = () => {
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/account/*" element={<Account />} />
             <Route path="/admin/*" element={<AdminDashboard />} />
+            <Route path="/faq" element={<InfoPage slug="faq" />} />
+            <Route path="/shipping" element={<InfoPage slug="shipping" />} />
+            <Route path="/terms" element={<InfoPage slug="terms" />} />
+            <Route path="/contact" element={<InfoPage slug="contact" />} />
           </Routes>
         </Suspense>
       </main>

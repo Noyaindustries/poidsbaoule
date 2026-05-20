@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { Product } from '@/types';
-import { apiJson } from './api';
+import { apiJson, ApiError } from './api';
+import { sanitizeImageList } from '@/lib/productImages';
 
 interface ProductContextType {
   products: Product[];
   isLoadingProducts: boolean;
+  productsError: string | null;
   updateProduct: (updatedProduct: Product) => Promise<Product>;
   deleteProduct: (productId: string) => Promise<void>;
   decrementStock: (productId: string, quantity: number) => Promise<void>;
@@ -13,14 +15,21 @@ interface ProductContextType {
 }
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined);
-const PRODUCTS_CACHE_KEY = 'pb_products_cache_v1';
+const PRODUCTS_CACHE_KEY = 'pb_products_cache_v3';
+
+function normalizeProducts(data: unknown): Product[] {
+  if (!Array.isArray(data)) return [];
+  return data.map((row) => {
+    const p = row as Product;
+    return { ...p, images: sanitizeImageList(p.images) };
+  });
+}
 
 const getCachedProducts = (): Product[] => {
   try {
     const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as Product[]) : [];
+    return normalizeProducts(JSON.parse(raw) as unknown);
   } catch {
     return [];
   }
@@ -30,7 +39,7 @@ const setCachedProducts = (products: Product[]) => {
   try {
     localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(products));
   } catch {
-    // Cache best-effort: ignorer les erreurs de quota/accès localStorage.
+    // Cache best-effort.
   }
 };
 
@@ -45,40 +54,49 @@ export const useProducts = () => {
 export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [products, setProducts] = useState<Product[]>(() => getCachedProducts());
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(products.length === 0);
+  const [productsError, setProductsError] = useState<string | null>(null);
 
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     setIsLoadingProducts(true);
+    setProductsError(null);
     try {
       const data = await apiJson<Product[]>('/api/products');
-      const normalized = Array.isArray(data) ? data : [];
+      const normalized = normalizeProducts(data);
       setProducts(normalized);
       setCachedProducts(normalized);
     } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : 'Impossible de charger le catalogue. Vérifiez que l’API tourne (npm run dev).';
+      setProductsError(message);
       console.error('Failed to fetch products:', e);
     } finally {
       setIsLoadingProducts(false);
     }
-  };
-
-  useEffect(() => {
-    fetchProducts();
   }, []);
 
+  useEffect(() => {
+    void fetchProducts();
+  }, [fetchProducts]);
+
   const updateProduct = async (updatedProduct: Product): Promise<Product> => {
-    const data = await apiJson<Product>(`/api/products/${encodeURIComponent(updatedProduct.id)}`, {
+    const payload = { ...updatedProduct, images: sanitizeImageList(updatedProduct.images) };
+    const data = await apiJson<Product>(`/api/products/${encodeURIComponent(payload.id)}`, {
       method: 'PUT',
-      body: JSON.stringify(updatedProduct),
+      body: JSON.stringify(payload),
     });
+    const saved = normalizeProducts([data])[0] ?? payload;
 
     setProducts((prev) => {
-      const existingIndex = prev.findIndex((p) => p.id === data.id);
+      const existingIndex = prev.findIndex((p) => p.id === saved.id);
       if (existingIndex === -1) {
-        return [data, ...prev];
+        return [saved, ...prev];
       }
-      return prev.map((p) => (p.id === data.id ? data : p));
+      return prev.map((p) => (p.id === saved.id ? saved : p));
     });
 
-    return data;
+    return saved;
   };
 
   const decrementStock = async (productId: string, quantity: number) => {
@@ -116,6 +134,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
       value={{
         products,
         isLoadingProducts,
+        productsError,
         updateProduct,
         deleteProduct,
         decrementStock,

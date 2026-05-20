@@ -9,6 +9,12 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { getDb } from './db';
+import {
+  docHasEmbeddedImages,
+  sanitizeImageList,
+  sanitizeProductDoc,
+  toCatalogListItem,
+} from './product-images';
 import { PRODUCTS } from '../src/constants';
 import type { CustomerTestimonial, ProductComment } from '../src/types';
 
@@ -16,24 +22,23 @@ export const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-const { uploadDir, uploadsRoot } = (() => {
-  // Netlify Functions (lambda) tournent souvent dans un filesystem non-écrivable (ex: /var/task).
-  // On tente d'abord le chemin local "uploads/", sinon on bascule sur os.tmpdir().
+const { customOrderUploadDir, productUploadDir, uploadsRoot } = (() => {
+  const ensureDirs = (root: string) => {
+    const custom = path.join(root, 'custom-orders');
+    const products = path.join(root, 'products');
+    fs.mkdirSync(custom, { recursive: true });
+    fs.mkdirSync(products, { recursive: true });
+    return { customOrderUploadDir: custom, productUploadDir: products, uploadsRoot: root };
+  };
   const localUploadsRoot = path.join(process.cwd(), 'uploads');
-  const localCustomOrdersDir = path.join(localUploadsRoot, 'custom-orders');
   try {
-    fs.mkdirSync(localCustomOrdersDir, { recursive: true });
-    return { uploadDir: localCustomOrdersDir, uploadsRoot: localUploadsRoot };
-  } catch (e) {
+    return ensureDirs(localUploadsRoot);
+  } catch {
     const tmpUploadsRoot = path.join(os.tmpdir(), 'uploads');
-    const tmpCustomOrdersDir = path.join(tmpUploadsRoot, 'custom-orders');
     try {
-      fs.mkdirSync(tmpCustomOrdersDir, { recursive: true });
-      return { uploadDir: tmpCustomOrdersDir, uploadsRoot: tmpUploadsRoot };
+      return ensureDirs(tmpUploadsRoot);
     } catch {
-      // Dernier recours: on garde un chemin mais sans garantir que l'upload pourra écrire.
-      // Cela évite de faire planter toute la fonction au démarrage.
-      return { uploadDir: localCustomOrdersDir, uploadsRoot: localUploadsRoot };
+      return ensureDirs(localUploadsRoot);
     }
   }
 })();
@@ -46,7 +51,7 @@ const maxUploadFiles = 5;
 
 const customOrderUpload = multer({
   storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, uploadDir),
+    destination: (_req, _file, cb) => cb(null, customOrderUploadDir),
     filename: (_req, file, cb) => {
       const safeExt = path.extname(file.originalname || '').toLowerCase() || '.jpg';
       cb(null, `${Date.now()}-${randomUUID()}${safeExt}`);
@@ -56,6 +61,24 @@ const customOrderUpload = multer({
     fileSize: maxUploadBytes,
     files: maxUploadFiles,
   },
+  fileFilter: (_req, file, cb) => {
+    if (!allowedUploadMimeTypes.has(file.mimetype)) {
+      cb(new Error('Format non pris en charge. Utilisez JPG, PNG ou WebP.'));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+const productImageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, productUploadDir),
+    filename: (_req, file, cb) => {
+      const safeExt = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `${Date.now()}-${randomUUID()}${safeExt}`);
+    },
+  }),
+  limits: { fileSize: maxUploadBytes, files: 1 },
   fileFilter: (_req, file, cb) => {
     if (!allowedUploadMimeTypes.has(file.mimetype)) {
       cb(new Error('Format non pris en charge. Utilisez JPG, PNG ou WebP.'));
@@ -201,6 +224,34 @@ function clampRating(n: unknown): 1 | 2 | 3 | 4 | 5 {
   return Math.min(5, Math.max(1, v)) as 1 | 2 | 3 | 4 | 5;
 }
 
+async function migrateStripEmbeddedProductImages(): Promise<void> {
+  const db = await getDb();
+  const meta = db.collection('app_meta');
+  const flag = await meta.findOne({ key: 'stripped_product_images_v1' });
+  if (flag) return;
+
+  const col = db.collection('products');
+  const rows = await col.find({}).toArray();
+  let updated = 0;
+  for (const row of rows) {
+    const { _id, ...p } = row;
+    const doc = p as Record<string, unknown>;
+    if (!docHasEmbeddedImages(doc)) continue;
+    const images = sanitizeImageList(doc.images);
+    await col.updateOne({ id: doc.id }, { $set: { images } });
+    updated += 1;
+  }
+
+  await meta.insertOne({
+    key: 'stripped_product_images_v1',
+    updatedAt: new Date().toISOString(),
+    productsUpdated: updated,
+  });
+  if (updated > 0) {
+    console.log(`[mongo] ${updated} produit(s) : images base64 retirées de la base.`);
+  }
+}
+
 // --- Products ---
 app.get('/api/products', async (_req: Request, res: Response) => {
   try {
@@ -208,9 +259,10 @@ app.get('/api/products', async (_req: Request, res: Response) => {
     const rows = await db
       .collection('products')
       .find({})
+      .project({ _id: 0 })
       .sort({ createdAt: -1 })
       .toArray();
-    const mapped = rows.map(({ _id, ...p }) => p);
+    const mapped = rows.map((p) => toCatalogListItem(p as Record<string, unknown>));
     res.json(mapped);
   } catch (e) {
     console.error(e);
@@ -218,15 +270,58 @@ app.get('/api/products', async (_req: Request, res: Response) => {
   }
 });
 
+app.get('/api/products/:id', async (req: Request, res: Response) => {
+  try {
+    const db = await getDb();
+    const row = await db.collection('products').findOne(
+      { id: req.params.id },
+      { projection: { _id: 0 } }
+    );
+    if (!row) {
+      res.status(404).json({ error: 'produit introuvable' });
+      return;
+    }
+    res.json(sanitizeProductDoc(row as Record<string, unknown>));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lecture produit' });
+  }
+});
+
+app.post('/api/products/upload', (req: Request, res: Response) => {
+  productImageUpload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        res.status(400).json({ error: 'Le fichier doit faire 5 Mo maximum.' });
+        return;
+      }
+      const message = err instanceof Error ? err.message : 'Erreur lors du téléversement.';
+      res.status(400).json({ error: message });
+      return;
+    }
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) {
+      res.status(400).json({ error: 'Aucun fichier reçu.' });
+      return;
+    }
+    res.status(201).json({
+      file: {
+        url: `/uploads/products/${file.filename}`,
+        originalName: file.originalname,
+        size: file.size,
+        mimeType: file.mimetype,
+      },
+    });
+  });
+});
+
 app.put('/api/products/:id', async (req: Request, res: Response) => {
   try {
     const db = await getDb();
     const body = req.body as Record<string, unknown>;
     const id = req.params.id;
-    const doc = { ...body, id };
-    await db
-      .collection('products')
-      .replaceOne({ id }, doc, { upsert: true });
+    const doc = sanitizeProductDoc({ ...body, id });
+    await db.collection('products').replaceOne({ id }, doc, { upsert: true });
     res.json(doc);
   } catch (e) {
     console.error(e);
@@ -1125,25 +1220,6 @@ function resolveDistDir(): string {
 const distDir = resolveDistDir();
 const distIndex = path.join(distDir, 'index.html');
 
-// #region agent log
-fetch('http://127.0.0.1:27772/ingest/69353350-be9e-4e7e-945f-5b8e0cd4960a', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '64bc3d' },
-  body: JSON.stringify({
-    sessionId: '64bc3d',
-    hypothesisId: 'H-fileURLToPath',
-    location: 'server/index.ts:resolveDistDir',
-    message: 'dist paths resolved',
-    data: {
-      distDir,
-      cwd: process.cwd(),
-      hasImportMetaUrl: Boolean((import.meta as { url?: string }).url),
-    },
-    timestamp: Date.now(),
-  }),
-}).catch(() => {});
-// #endregion
-
 // Sert l'application front buildée en production monolithique.
 app.use(express.static(distDir));
 app.get('*', (req: Request, res: Response, next) => {
@@ -1166,6 +1242,7 @@ export async function initializeApp() {
       await getDb();
       await ensureIndexes();
       await seedProductsIfEmpty();
+      await migrateStripEmbeddedProductImages();
       await seedTestimonialsIfEmpty();
     })().catch((err) => {
       initPromise = null;
@@ -1177,8 +1254,17 @@ export async function initializeApp() {
 
 async function main() {
   await initializeApp();
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`App monolithique (API + front) sur http://localhost:${port}`);
+  });
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `\n[api] Le port ${port} est déjà utilisé. Arrêtez l'autre processus (netstat -ano | findstr :${port}) ou changez PORT/API_PORT dans .env.\n`
+      );
+      process.exit(1);
+    }
+    throw err;
   });
 }
 

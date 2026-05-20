@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { ChevronRight, ArrowRight } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Link } from 'react-router-dom';
 import { useProducts } from '@/lib/ProductContext';
+import { pickFeaturedProducts, primaryProductImage } from '@/lib/productImages';
+import { CatalogStatusBanner } from '@/components/CatalogStatusBanner';
 import { CustomerTestimonialsSection } from '@/components/CustomerTestimonialsSection';
 
 const Hero = () => {
@@ -158,25 +160,8 @@ const Hero = () => {
 };
 
 const FeaturedProducts = () => {
-  const { products, isLoadingProducts, refreshProducts } = useProducts();
-  const featured = products;
-
-  useEffect(() => {
-    const syncProducts = () => {
-      void refreshProducts();
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') syncProducts();
-    };
-
-    window.addEventListener('focus', syncProducts);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      window.removeEventListener('focus', syncProducts);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
-  }, [refreshProducts]);
+  const { products, isLoadingProducts, productsError, refreshProducts } = useProducts();
+  const featured = useMemo(() => pickFeaturedProducts(products, 4), [products]);
 
   return (
     <section className="overflow-x-clip bg-background py-12 sm:py-16 md:py-32">
@@ -208,15 +193,17 @@ const FeaturedProducts = () => {
 
           <div className="min-w-0 lg:col-span-7">
             <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-              {isLoadingProducts && featured.length === 0 ? (
-                <div className="md:col-span-2 rounded-[40px] border border-dashed border-muted-foreground/20 p-10 text-center text-muted-foreground">
-                  Chargement des produits...
+              {featured.length === 0 ? (
+                <div className="md:col-span-2">
+                  <CatalogStatusBanner
+                    isLoading={isLoadingProducts}
+                    error={productsError}
+                    isEmpty
+                    onRetry={refreshProducts}
+                  />
                 </div>
-              ) : featured.length === 0 ? (
-                <div className="md:col-span-2 rounded-[40px] border border-dashed border-muted-foreground/20 p-10 text-center text-muted-foreground">
-                  Aucun produit disponible pour le moment.
-                </div>
-              ) : featured.map((product, index) => (
+              ) : null}
+              {featured.map((product, index) => (
                 <motion.div
                   key={product.id}
                   initial={{ opacity: 0, y: 40 }}
@@ -236,7 +223,7 @@ const FeaturedProducts = () => {
                         onClick={() => window.scrollTo(0, 0)}
                       >
                         <img
-                          src={product.images[0]}
+                          src={primaryProductImage(product)}
                           alt={product.name}
                           className="h-full w-full object-cover transition-transform duration-1000 group-hover:scale-105"
                           referrerPolicy="no-referrer"

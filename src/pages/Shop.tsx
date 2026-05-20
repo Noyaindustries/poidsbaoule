@@ -10,13 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Link, useSearchParams } from 'react-router-dom';
 import { useProducts } from '@/lib/ProductContext';
 import { useCategories } from '@/lib/CategoryContext';
+import { sortProductsFeatured, primaryProductImage } from '@/lib/productImages';
+import { CatalogStatusBanner } from '@/components/CatalogStatusBanner';
 import { FALLBACK_CATEGORY_IMAGE } from '@/constants';
 
 export default function Shop() {
-  const { products } = useProducts();
+  const { products, isLoadingProducts, productsError, refreshProducts } = useProducts();
   const { categories, getCategoryImage } = useCategories();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const filterCategoryLabels = useMemo(() => {
@@ -44,12 +48,22 @@ export default function Shop() {
       );
     }
 
+    const min = priceMin.trim() ? Number(priceMin) : null;
+    const max = priceMax.trim() ? Number(priceMax) : null;
+    if (min !== null && !Number.isNaN(min)) {
+      result = result.filter((p) => p.price >= min);
+    }
+    if (max !== null && !Number.isNaN(max)) {
+      result = result.filter((p) => p.price <= max);
+    }
+
+    if (sortBy === 'featured') result = sortProductsFeatured(result);
     if (sortBy === 'price-asc') result.sort((a, b) => a.price - b.price);
     if (sortBy === 'price-desc') result.sort((a, b) => b.price - a.price);
     if (sortBy === 'newest') result.sort((a, b) => b.id.localeCompare(a.id));
 
     return result;
-  }, [activeCategory, searchQuery, sortBy, products]);
+  }, [activeCategory, searchQuery, sortBy, products, priceMin, priceMax]);
 
   const handleCategoryChange = (cat: string) => {
     if (cat === 'Tous') {
@@ -149,11 +163,33 @@ export default function Shop() {
               <h3 className="font-bold uppercase tracking-widest text-xs">Prix</h3>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Input type="number" placeholder="Min" className="h-8 text-xs" />
+                  <Input
+                    type="number"
+                    placeholder="Min"
+                    className="h-8 text-xs"
+                    value={priceMin}
+                    onChange={(e) => setPriceMin(e.target.value)}
+                  />
                   <span className="text-muted-foreground">-</span>
-                  <Input type="number" placeholder="Max" className="h-8 text-xs" />
+                  <Input
+                    type="number"
+                    placeholder="Max"
+                    className="h-8 text-xs"
+                    value={priceMax}
+                    onChange={(e) => setPriceMax(e.target.value)}
+                  />
                 </div>
-                <Button variant="outline" size="sm" className="w-full text-xs rounded-full">Appliquer</Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs rounded-full"
+                  onClick={() => {
+                    setPriceMin('');
+                    setPriceMax('');
+                  }}
+                >
+                  Réinitialiser le prix
+                </Button>
               </div>
             </div>
           </aside>
@@ -205,6 +241,15 @@ export default function Shop() {
               </div>
 
               <div className="flex w-full min-w-0 flex-col gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end sm:gap-4">
+                <div className="relative w-full sm:hidden">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Rechercher..."
+                    className="h-11 rounded-full pl-10"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
                 <div className="flex items-center gap-1 self-start rounded-lg bg-muted p-1 sm:self-center">
                   <Button 
                     variant={viewMode === 'grid' ? 'secondary' : 'ghost'} 
@@ -270,6 +315,13 @@ export default function Shop() {
               </div>
             )}
 
+            <CatalogStatusBanner
+              isLoading={isLoadingProducts}
+              error={productsError}
+              isEmpty={products.length === 0}
+              onRetry={refreshProducts}
+            />
+
             {/* Product Grid */}
             {filteredProducts.length > 0 ? (
               <div className={viewMode === 'grid' ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8" : "flex flex-col gap-10"}>
@@ -290,7 +342,7 @@ export default function Shop() {
                       >
                         <div className={`relative overflow-hidden bg-muted ${viewMode === 'list' ? 'w-full md:w-72 aspect-[5/6] md:aspect-[4/5] shrink-0 rounded-[24px]' : 'aspect-[6/7] sm:aspect-[4/5]'}`}>
                           <img 
-                            src={product.images[0]} 
+                            src={primaryProductImage(product)} 
                             alt={product.name} 
                             className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                             referrerPolicy="no-referrer"
@@ -353,6 +405,8 @@ export default function Shop() {
                 <p className="text-muted-foreground">Essayez d'ajuster vos filtres ou votre recherche.</p>
                 <Button variant="outline" className="rounded-full px-8 py-6" onClick={() => {
                   setSearchQuery('');
+                  setPriceMin('');
+                  setPriceMax('');
                   handleCategoryChange('Tous');
                 }}>
                   Réinitialiser les filtres

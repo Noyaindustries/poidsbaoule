@@ -1,7 +1,7 @@
 import { useRef, type ChangeEvent, type KeyboardEventHandler } from 'react';
 import { Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import { readImageFileAsDataUrl } from '@/lib/localImage';
+import { uploadProductImage } from '@/lib/uploadProductImage';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -17,7 +17,7 @@ type Props = {
 };
 
 /**
- * Champ URL + import fichier local (data URL, stocké côté navigateur avec le reste des préférences).
+ * Champ URL + import fichier (téléversement serveur `/uploads/products/…`).
  */
 export function LocalImageField({
   id,
@@ -35,9 +35,9 @@ export function LocalImageField({
     e.target.value = '';
     if (!file) return;
     try {
-      const dataUrl = await readImageFileAsDataUrl(file);
-      onChange(dataUrl);
-      toast.success('Image importée depuis votre appareil.');
+      const url = await uploadProductImage(file);
+      onChange(url);
+      toast.success('Image enregistrée sur le serveur.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Import impossible.');
     }

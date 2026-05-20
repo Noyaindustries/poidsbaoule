@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Link } from 'react-router-dom';
 import { PRODUCTS } from '@/constants';
 import { useProducts } from '@/lib/ProductContext';
+import { primaryProductImage } from '@/lib/productImages';
 import { useCategories } from '@/lib/CategoryContext';
 import { FALLBACK_CATEGORY_IMAGE } from '@/constants';
 
@@ -151,7 +152,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
                         >
                           <div className="h-20 w-20 rounded-xl overflow-hidden shrink-0 bg-muted">
                             <img 
-                              src={product.images[0]} 
+                              src={primaryProductImage(product)} 
                               alt={product.name} 
                               className="w-full h-full object-cover transition-transform group-hover:scale-110"
                             />

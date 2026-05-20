@@ -56,7 +56,7 @@ export interface Reservation {
     roomsInScope: string[];
     options: {
       shoppingList: boolean;
-      3dPlan: boolean;
+      '3dPlan': boolean;
       installationStyling: boolean;
       followUpVisit: boolean;
     };
