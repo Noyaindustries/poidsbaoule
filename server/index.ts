@@ -15,6 +15,11 @@ import {
   sanitizeProductDoc,
   toCatalogListItem,
 } from './product-images';
+import {
+  loadProductMedia,
+  rewriteLegacyUploadUrl,
+  saveProductMedia,
+} from './product-media';
 import { PRODUCTS } from '../src/constants';
 import type { CustomerTestimonial, ProductComment } from '../src/types';
 
@@ -71,13 +76,7 @@ const customOrderUpload = multer({
 });
 
 const productImageUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, productUploadDir),
-    filename: (_req, file, cb) => {
-      const safeExt = path.extname(file.originalname || '').toLowerCase() || '.jpg';
-      cb(null, `${Date.now()}-${randomUUID()}${safeExt}`);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: maxUploadBytes, files: 1 },
   fileFilter: (_req, file, cb) => {
     if (!allowedUploadMimeTypes.has(file.mimetype)) {
@@ -87,6 +86,23 @@ const productImageUpload = multer({
     cb(null, true);
   },
 });
+
+async function serveProductMediaFile(filename: string, res: Response): Promise<void> {
+  const safeName = path.basename(filename);
+  if (!safeName || safeName !== filename) {
+    res.status(400).json({ error: 'nom de fichier invalide' });
+    return;
+  }
+  const db = await getDb();
+  const loaded = await loadProductMedia(db, safeName, productUploadDir);
+  if (!loaded) {
+    res.status(404).json({ error: 'image introuvable' });
+    return;
+  }
+  res.setHeader('Content-Type', loaded.contentType);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.send(loaded.buffer);
+}
 
 function toPublicUser(doc: Record<string, unknown>) {
   const { _id, passwordHash, ...rest } = doc;
@@ -118,6 +134,7 @@ async function ensureIndexes(): Promise<void> {
   await db.collection('testimonials').createIndex({ id: 1 }, { unique: true });
   await db.collection('product_comments').createIndex({ id: 1 }, { unique: true });
   await db.collection('product_comments').createIndex({ productId: 1, createdAt: -1 });
+  await db.collection('product_media').createIndex({ key: 1 }, { unique: true });
 }
 
 const SEED_TESTIMONIALS: CustomerTestimonial[] = [
@@ -252,6 +269,37 @@ async function migrateStripEmbeddedProductImages(): Promise<void> {
   }
 }
 
+async function migrateProductImageUrlsToApi(): Promise<void> {
+  const db = await getDb();
+  const meta = db.collection('app_meta');
+  if (await meta.findOne({ key: 'product_image_urls_api_v1' })) return;
+
+  const col = db.collection('products');
+  const rows = await col.find({}).toArray();
+  let updated = 0;
+  for (const row of rows) {
+    const { _id, ...p } = row;
+    const doc = p as Record<string, unknown>;
+    if (!Array.isArray(doc.images)) continue;
+    const next = doc.images.map((u) =>
+      typeof u === 'string' ? rewriteLegacyUploadUrl(u) : u
+    );
+    const changed = next.some((u, i) => u !== doc.images[i]);
+    if (!changed) continue;
+    await col.updateOne({ id: doc.id }, { $set: { images: next } });
+    updated += 1;
+  }
+
+  await meta.insertOne({
+    key: 'product_image_urls_api_v1',
+    updatedAt: new Date().toISOString(),
+    productsUpdated: updated,
+  });
+  if (updated > 0) {
+    console.log(`[mongo] ${updated} produit(s) : URLs images → /api/media/products/…`);
+  }
+}
+
 // --- Products ---
 app.get('/api/products', async (_req: Request, res: Response) => {
   try {
@@ -289,7 +337,7 @@ app.get('/api/products/:id', async (req: Request, res: Response) => {
 });
 
 app.post('/api/products/upload', (req: Request, res: Response) => {
-  productImageUpload.single('file')(req, res, (err) => {
+  productImageUpload.single('file')(req, res, async (err) => {
     if (err) {
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
         res.status(400).json({ error: 'Le fichier doit faire 5 Mo maximum.' });
@@ -300,19 +348,47 @@ app.post('/api/products/upload', (req: Request, res: Response) => {
       return;
     }
     const file = req.file as Express.Multer.File | undefined;
-    if (!file) {
+    if (!file?.buffer?.length) {
       res.status(400).json({ error: 'Aucun fichier reçu.' });
       return;
     }
-    res.status(201).json({
-      file: {
-        url: `/uploads/products/${file.filename}`,
-        originalName: file.originalname,
-        size: file.size,
-        mimeType: file.mimetype,
-      },
-    });
+    try {
+      const safeExt = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      const filename = `${Date.now()}-${randomUUID()}${safeExt}`;
+      const db = await getDb();
+      const url = await saveProductMedia(db, filename, file.mimetype, file.buffer);
+      res.status(201).json({
+        file: {
+          url,
+          originalName: file.originalname,
+          size: file.size,
+          mimeType: file.mimetype,
+        },
+      });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: 'Erreur enregistrement image' });
+    }
   });
+});
+
+app.get('/api/media/products/:filename', async (req: Request, res: Response) => {
+  try {
+    await serveProductMediaFile(req.params.filename, res);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lecture image' });
+  }
+});
+
+/** Anciennes URLs /uploads/products/… → même flux que l’API média. */
+app.get('/uploads/products/:filename', async (req: Request, res: Response) => {
+  try {
+    await serveProductMediaFile(req.params.filename, res);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur lecture image' });
+  }
 });
 
 app.put('/api/products/:id', async (req: Request, res: Response) => {
@@ -1243,6 +1319,7 @@ export async function initializeApp() {
       await ensureIndexes();
       await seedProductsIfEmpty();
       await migrateStripEmbeddedProductImages();
+      await migrateProductImageUrlsToApi();
       await seedTestimonialsIfEmpty();
     })().catch((err) => {
       initPromise = null;

@@ -1,3 +1,4 @@
 # Netlify: _redirects is applied before netlify.toml; put /api before /* or SPA catches /api/*.
 /api/*  /.netlify/functions/api/:splat  200
+/uploads/products/*  /.netlify/functions/api/uploads/products/:splat  200
 /*      /index.html  200

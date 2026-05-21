@@ -3,9 +3,11 @@ import { FALLBACK_CATEGORY_IMAGE } from '@/constants';
 
 export function sanitizeImageList(images: unknown): string[] {
   if (!Array.isArray(images)) return [FALLBACK_CATEGORY_IMAGE];
-  const clean = images.filter(
-    (x): x is string => typeof x === 'string' && x.trim().length > 0 && !isEmbeddedImage(x)
-  );
+  const clean = images
+    .filter(
+      (x): x is string => typeof x === 'string' && x.trim().length > 0 && !isEmbeddedImage(x)
+    )
+    .map(resolveProductImageUrl);
   return clean.length > 0 ? clean : [FALLBACK_CATEGORY_IMAGE];
 }
 
@@ -13,9 +15,18 @@ export function isEmbeddedImage(src: string): boolean {
   return src.startsWith('data:');
 }
 
+/** Anciennes URLs disque → API (affichage en dev et sur Netlify). */
+export function resolveProductImageUrl(src: string): string {
+  if (src.startsWith('/uploads/products/')) {
+    return `/api/media/products/${src.slice('/uploads/products/'.length)}`;
+  }
+  return src;
+}
+
 export function primaryProductImage(product: Product): string {
   const first = product.images?.find((src) => src && !isEmbeddedImage(src));
-  return first ?? product.images?.[0] ?? FALLBACK_CATEGORY_IMAGE;
+  const raw = first ?? product.images?.[0] ?? FALLBACK_CATEGORY_IMAGE;
+  return resolveProductImageUrl(raw);
 }
 
 const FEATURED_BADGE_ORDER: Record<string, number> = {

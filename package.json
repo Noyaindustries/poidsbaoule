@@ -14,7 +14,8 @@
     "lint": "tsc --noEmit",
     "seed:test": "tsx server/seed-test-data.ts",
     "migrate:orders:remove-payment-strategy": "tsx server/migrate-remove-payment-strategy.ts",
-    "migrate:strip-product-images": "tsx server/migrate-strip-product-images.ts"
+    "migrate:strip-product-images": "tsx server/migrate-strip-product-images.ts",
+    "import:disk-product-images": "tsx server/import-disk-product-images.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

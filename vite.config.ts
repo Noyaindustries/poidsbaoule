@@ -32,12 +32,20 @@ export default defineConfig(({ mode }) => {
             target: 'http://127.0.0.1:5050',
             changeOrigin: true,
           },
+          '/uploads': {
+            target: 'http://127.0.0.1:5050',
+            changeOrigin: true,
+          },
         },
       },
       /** Même proxy qu’en dev : sans cela, `vite preview` répond 404 sur `/api/*`. */
       preview: {
         proxy: {
           '/api': {
+            target: 'http://127.0.0.1:5050',
+            changeOrigin: true,
+          },
+          '/uploads': {
             target: 'http://127.0.0.1:5050',
             changeOrigin: true,
           },

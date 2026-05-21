@@ -38,6 +38,12 @@
   force = true
 
 [[redirects]]
+  from = "/uploads/products/*"
+  to = "/.netlify/functions/api/uploads/products/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

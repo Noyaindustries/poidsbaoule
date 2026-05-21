@@ -1,3 +1,5 @@
+import { rewriteLegacyUploadUrl } from './product-media';
+
 /** Image par défaut si le catalogue ne contient que des data URLs (legacy). */
 export const PRODUCT_IMAGE_FALLBACK = '/PHOTO-2026-04-15-18-25-32.jpg';
 
@@ -5,12 +7,18 @@ export function isEmbeddedImage(src: string): boolean {
   return src.startsWith('data:');
 }
 
+function normalizeImageUrl(src: string): string {
+  return rewriteLegacyUploadUrl(src.trim());
+}
+
 /** Retire les images base64 du payload API (perf + cache navigateur). */
 export function sanitizeImageList(images: unknown): string[] {
   if (!Array.isArray(images)) return [PRODUCT_IMAGE_FALLBACK];
-  const clean = images.filter(
-    (x): x is string => typeof x === 'string' && x.trim().length > 0 && !isEmbeddedImage(x)
-  );
+  const clean = images
+    .filter(
+      (x): x is string => typeof x === 'string' && x.trim().length > 0 && !isEmbeddedImage(x)
+    )
+    .map(normalizeImageUrl);
   return clean.length > 0 ? clean : [PRODUCT_IMAGE_FALLBACK];
 }
 
