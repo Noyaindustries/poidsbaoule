@@ -1,7 +1,9 @@
 import serverless from 'serverless-http';
 import { app, initializeApp } from '../../server/index';
 
-const expressHandler = serverless(app);
+const expressHandler = serverless(app, {
+  binary: ['image/jpeg', 'image/png', 'image/webp', 'multipart/form-data'],
+});
 const netlifyPrefix = '/.netlify/functions/api';
 
 function normalizePath(pathValue: string | undefined): string {

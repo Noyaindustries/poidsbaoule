@@ -27,6 +27,8 @@ import { useProducts } from '@/lib/ProductContext';
 import { toast } from 'sonner';
 import { Product } from '@/types';
 import { LocalImageField } from '@/components/admin/LocalImageField';
+import { AdminProductImage } from '@/components/admin/AdminProductImage';
+import { resolveProductImageUrl } from '@/lib/productImages';
 
 export default function ProductManager() {
   const { products, updateProduct, deleteProduct } = useProducts();
@@ -206,7 +208,11 @@ export default function ProductManager() {
                       <td className="px-8 py-4">
                         <div className="flex items-center gap-4">
                           <div className="h-12 w-12 rounded-xl overflow-hidden bg-muted shrink-0 shadow-sm transition-transform group-hover:scale-105">
-                            <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />
+                            <AdminProductImage
+                              src={p.images[0] ?? ''}
+                              alt={p.name}
+                              className="h-full w-full object-cover"
+                            />
                           </div>
                           <div>
                             <p className="font-bold">{p.name}</p>
@@ -338,14 +344,24 @@ function ProductForm({ product, onSave }: { product?: Product, onSave: (p: Produ
   const isNewProduct = !product;
   const mainImage = formData.images?.[0];
 
+  const addImageToGallery = (url: string) => {
+    const normalized = resolveProductImageUrl(url.trim());
+    if (!normalized) return;
+    if (formData.images.includes(normalized)) {
+      toast.message('Cette image est déjà dans la galerie.');
+      return;
+    }
+    setFormData({ ...formData, images: [...formData.images, normalized] });
+    setImageUrlInput('');
+  };
+
   const addImageFromInput = () => {
     const trimmed = imageUrlInput.trim();
     if (!trimmed) {
-      toast.error("Collez une URL d’image ou importez un fichier local, puis ajoutez à la galerie.");
+      toast.error('Importez un fichier ou collez une URL, puis « Ajouter ».');
       return;
     }
-    setFormData({ ...formData, images: [...formData.images, trimmed] });
-    setImageUrlInput('');
+    addImageToGallery(trimmed);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -403,7 +419,11 @@ function ProductForm({ product, onSave }: { product?: Product, onSave: (p: Produ
             </div>
             <div className="h-20 w-20 rounded-xl overflow-hidden border border-slate-200 bg-white shrink-0">
               {mainImage ? (
-                <img src={mainImage} alt="Aperçu produit" className="w-full h-full object-cover" />
+                <AdminProductImage
+                  src={mainImage}
+                  alt="Aperçu produit"
+                  className="h-full w-full min-h-[200px] object-cover"
+                />
               ) : (
                 <div className="h-full w-full flex items-center justify-center text-slate-400">
                   <ImageIcon className="h-5 w-5" />
@@ -505,7 +525,11 @@ function ProductForm({ product, onSave }: { product?: Product, onSave: (p: Produ
                   exit={{ opacity: 0, scale: 0.8 }}
                   className="aspect-square rounded-2xl overflow-hidden relative group border bg-muted"
                 >
-                  <img src={img} alt={`Image ${i + 1} du produit`} className="w-full h-full object-cover" />
+                  <AdminProductImage
+                    src={img}
+                    alt={`Image ${i + 1} du produit`}
+                    className="h-full w-full min-h-[100px] object-cover"
+                  />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Button 
                       type="button"
@@ -530,7 +554,8 @@ function ProductForm({ product, onSave }: { product?: Product, onSave: (p: Produ
                   id="product-gallery-url"
                   value={imageUrlInput}
                   onChange={setImageUrlInput}
-                  placeholder="https://… ou /fichier.jpg — puis « Ajouter »"
+                  onUploadComplete={addImageToGallery}
+                  placeholder="https://… ou fichier local (ajout auto à la galerie)"
                   className="min-w-0 flex-1"
                   onInputKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -548,8 +573,8 @@ function ProductForm({ product, onSave }: { product?: Product, onSave: (p: Produ
                   <Plus className="mr-2 h-4 w-4" /> Ajouter
                 </Button>
               </div>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold px-2">
-                Astuce : import local via « Fichier local », ou collez une URL, puis Entrée ou « Ajouter »
+              <p className="px-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                « Fichier local » compresse et ajoute l’image à la galerie. Pensez à enregistrer le produit en bas.
               </p>
             </div>
           </div>

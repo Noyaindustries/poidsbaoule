@@ -42,6 +42,15 @@ export async function saveProductMedia(
   return productMediaPublicUrl(filename);
 }
 
+function binaryToBuffer(data: unknown): Buffer | null {
+  if (!data) return null;
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof Binary) {
+    return Buffer.from(data.buffer);
+  }
+  return null;
+}
+
 export async function loadProductMedia(
   db: Db,
   filename: string,
@@ -49,11 +58,11 @@ export async function loadProductMedia(
 ): Promise<{ contentType: string; buffer: Buffer } | null> {
   const key = productMediaKey(filename);
   const doc = await db.collection(COLLECTION).findOne({ key });
-  if (doc && doc.data) {
-    const bin = doc.data as Binary;
+  const buffer = doc ? binaryToBuffer(doc.data) : null;
+  if (buffer && buffer.length > 0) {
     return {
       contentType: String(doc.contentType || 'image/jpeg'),
-      buffer: Buffer.from(bin.buffer),
+      buffer,
     };
   }
 

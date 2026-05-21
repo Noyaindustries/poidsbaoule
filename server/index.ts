@@ -372,6 +372,46 @@ app.post('/api/products/upload', (req: Request, res: Response) => {
   });
 });
 
+/** Secours Netlify (multipart parfois bloqué) : JSON base64 après compression client. */
+app.post('/api/products/upload-data', async (req: Request, res: Response) => {
+  try {
+    const body = req.body as {
+      base64?: string;
+      contentType?: string;
+      filename?: string;
+    };
+    if (!body.base64?.trim()) {
+      res.status(400).json({ error: 'Données image manquantes.' });
+      return;
+    }
+    const buffer = Buffer.from(body.base64, 'base64');
+    const maxBytes = 4 * 1024 * 1024;
+    if (buffer.length === 0 || buffer.length > maxBytes) {
+      res.status(400).json({ error: 'Image invalide ou trop volumineuse (max 4 Mo après compression).' });
+      return;
+    }
+    const rawName = path.basename(body.filename || '') || `product-${Date.now()}.jpg`;
+    const safeExt = path.extname(rawName).toLowerCase();
+    const ext = ['.jpg', '.jpeg', '.png', '.webp'].includes(safeExt) ? safeExt : '.jpg';
+    const filename = `${Date.now()}-${randomUUID()}${ext}`;
+    const contentType =
+      body.contentType?.startsWith('image/') ? body.contentType : 'image/jpeg';
+    const db = await getDb();
+    const url = await saveProductMedia(db, filename, contentType, buffer);
+    res.status(201).json({
+      file: {
+        url,
+        originalName: rawName,
+        size: buffer.length,
+        mimeType: contentType,
+      },
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Erreur enregistrement image' });
+  }
+});
+
 app.get('/api/media/products/:filename', async (req: Request, res: Response) => {
   try {
     await serveProductMediaFile(req.params.filename, res);
